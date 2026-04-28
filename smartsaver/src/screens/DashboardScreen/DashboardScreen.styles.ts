@@ -1,0 +1,131 @@
+import { StyleSheet } from 'react-native';
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#111827',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1F2937',
+  },
+  headerTitle: {
+    color: '#F9FAFB',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1F2937',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusText: {
+    color: '#D1D5DB',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#9CA3AF',
+    marginTop: 15,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  content: {
+    padding: 20,
+  },
+  card: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  aiCard: {
+    borderWidth: 2,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  cardTitle: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  zoneText: {
+    fontSize: 42,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 5,
+  },
+  confidenceText: {
+    color: '#D1D5DB',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  grid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  gridItem: {
+    backgroundColor: '#1F2937',
+    borderRadius: 16,
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    flex: 1,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  metricLabel: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 8,
+    letterSpacing: 1,
+  },
+  metricValue: {
+    color: '#F9FAFB',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  relayContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  relayLabel: {
+    color: '#E5E7EB',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  relayStatus: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+});
