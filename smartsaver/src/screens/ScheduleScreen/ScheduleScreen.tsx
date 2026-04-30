@@ -96,7 +96,7 @@ export const ScheduleScreen = () => {
             <Switch 
               value={isActive} 
               onValueChange={setIsActive} 
-              trackColor={{ false: '#E2E8F0', true: '#3B82F6' }}
+              trackColor={{ false: '#E2E8F0', true: '#60A5FA' }}
             />
           </View>
         </View>

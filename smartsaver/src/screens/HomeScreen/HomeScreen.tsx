@@ -1,75 +1,56 @@
-import React, { useEffect } from 'react';
-import { View, Text, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useTelemetryStore } from '../../store/useTelemetryStore';
+import React from 'react';
+import { View, Text, SafeAreaView, TouchableOpacity, ScrollView } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { styles } from './HomeScreen.styles';
+import { LinearGradient } from 'expo-linear-gradient';
+import { getStyles } from './HomeScreen.styles';
+import { useThemeStore, getColors } from '../../store/useThemeStore';
 
 export const HomeScreen = () => {
-  const { startConnection, stopConnection, latestData } = useTelemetryStore();
-
-  useEffect(() => {
-    startConnection();
-    return () => stopConnection();
-  }, [startConnection, stopConnection]);
-
-  // Derive notifications from the latest TinyML prediction data
-  const getNotifications = () => {
-    if (!latestData) return null; // loading state
-
-    // Simulate different alerts based on the model's zone evaluation
-    if (latestData.ml_prediction.current_zone === 'Critical') {
-      return [
-        {
-          id: '1',
-          title: 'Power Outage Warning',
-          desc: 'Main battery bank has reached critical discharge levels. Disconnecting non-essential loads.',
-          time: 'Just now',
-          color: '#EF4444',
-          bg: '#FEE2E2',
-          icon: 'alert-triangle' as const
-        }
-      ];
-    }
-
-    if (latestData.ml_prediction.current_zone === 'Warning') {
-      return [
-        {
-          id: '2',
-          title: 'High Consumption Detected',
-          desc: 'Abnormal power draw on the primary circuit. Check connected devices.',
-          time: '2 mins ago',
-          color: '#F59E0B',
-          bg: '#FEF3C7',
-          icon: 'activity' as const
-        }
-      ];
-    }
-
-    // Safe Zone -> Empty array
-    return []; 
-  };
-
-  const notifications = getNotifications();
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
+  const styles = getStyles(colors);
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* --- HEADER --- */}
-      <View style={styles.header}>
-        <Text style={styles.greetingText}>Energy Management</Text>
-        <Text style={styles.headerTitle}>SmartSaver Hub</Text>
-      </View>
-
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* --- MAIN MENU --- */}
-        <Text style={styles.sectionTitle}>Main Menu</Text>
+        {/* HEADER */}
+        <View style={styles.headerContainer}>
+          <View>
+            <Text style={styles.greetingText}>Welcome back,</Text>
+            <Text style={styles.titleText}>SmartSaver Hub</Text>
+          </View>
+          <TouchableOpacity style={styles.notificationBadge}>
+            <Feather name="bell" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* SYSTEM STATUS CARD (Always maintains its own gradient identity) */}
+        <LinearGradient
+          colors={['#3B82F6', '#2563EB']}
+          style={styles.statusCard}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        >
+          <View style={styles.statusHeader}>
+            <Feather name="shield" size={20} color="#FFFFFF" />
+            <Text style={styles.statusTitle}>System Status</Text>
+          </View>
+          <Text style={styles.statusValue}>Optimal</Text>
+          <Text style={styles.statusSubtext}>All 3 Nodes Online • AI Active</Text>
+        </LinearGradient>
+
+        {/* QUICK LINKS SECTION */}
+        <Text style={styles.sectionHeader}>Quick Actions</Text>
+        
         <View style={styles.quickLinksGrid}>
+          
           <TouchableOpacity 
             style={styles.quickLinkCard}
             onPress={() => router.push('/devices')}
           >
-            <View style={[styles.iconContainer, { backgroundColor: '#EFF6FF', shadowColor: '#3B82F6' }]}>
+            <View style={[styles.iconContainer, { backgroundColor: isDark ? '#1e3a8a' : '#EFF6FF', shadowColor: '#3B82F6' }]}>
               <Feather name="cpu" size={26} color="#3B82F6" />
             </View>
             <Text style={styles.quickLinkText}>Devices</Text>
@@ -79,7 +60,7 @@ export const HomeScreen = () => {
             style={styles.quickLinkCard}
             onPress={() => router.push('/analytics')}
           >
-            <View style={[styles.iconContainer, { backgroundColor: '#F5F3FF', shadowColor: '#8B5CF6' }]}>
+            <View style={[styles.iconContainer, { backgroundColor: isDark ? '#4c1d95' : '#F5F3FF', shadowColor: '#8B5CF6' }]}>
               <Feather name="pie-chart" size={26} color="#8B5CF6" />
             </View>
             <Text style={styles.quickLinkText}>Analytics</Text>
@@ -89,50 +70,23 @@ export const HomeScreen = () => {
             style={styles.quickLinkCard}
             onPress={() => router.push('/logs')}
           >
-            <View style={[styles.iconContainer, { backgroundColor: '#ECFDF5', shadowColor: '#10B981' }]}>
+            <View style={[styles.iconContainer, { backgroundColor: isDark ? '#064e3b' : '#ECFDF5', shadowColor: '#10B981' }]}>
               <Feather name="file-text" size={26} color="#10B981" />
             </View>
             <Text style={styles.quickLinkText}>Event Logs</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.quickLinkCard}>
-            <View style={[styles.iconContainer, { backgroundColor: '#F8FAFC', shadowColor: '#64748B' }]}>
-              <Feather name="settings" size={26} color="#64748B" />
+          <TouchableOpacity 
+            style={styles.quickLinkCard}
+            onPress={() => router.push('/settings')}
+          >
+            <View style={[styles.iconContainer, { backgroundColor: isDark ? '#334155' : '#F8FAFC', shadowColor: '#64748B' }]}>
+              <Feather name="settings" size={26} color={isDark ? '#cbd5e1' : '#64748B'} />
             </View>
             <Text style={styles.quickLinkText}>Settings</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* --- NOTIFICATIONS CENTER --- */}
-        <Text style={styles.sectionTitle}>Recent Notifications</Text>
-        
-        {!notifications ? (
-          <View style={[styles.notificationEmptyCard, { paddingVertical: 40 }]}>
-             <ActivityIndicator size="small" color="#3B82F6" />
-             <Text style={styles.notificationEmptyText}>Syncing events...</Text>
-          </View>
-        ) : notifications.length === 0 ? (
-          <View style={styles.notificationEmptyCard}>
-            <Feather name="check-circle" size={36} color="#10B981" style={{ opacity: 0.8 }} />
-            <Text style={styles.notificationEmptyText}>No notifications. All systems normal.</Text>
-          </View>
-        ) : (
-          notifications.map(notif => (
-            <TouchableOpacity 
-              key={notif.id} 
-              style={[styles.notificationCard, { borderColor: '#E2E8F0', borderLeftColor: notif.color }]}
-            >
-              <View style={[styles.notificationIcon, { backgroundColor: notif.bg }]}>
-                <Feather name={notif.icon} size={22} color={notif.color} />
-              </View>
-              <View style={styles.notificationContent}>
-                <Text style={styles.notificationTitle}>{notif.title}</Text>
-                <Text style={styles.notificationDesc}>{notif.desc}</Text>
-              </View>
-              <Text style={styles.notificationTime}>{notif.time}</Text>
-            </TouchableOpacity>
-          ))
-        )}
+        </View>
 
       </ScrollView>
     </SafeAreaView>
