@@ -1,13 +1,81 @@
-import React from 'react';
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, SafeAreaView, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { styles } from './DevicesScreen.styles';
-import { BatteryZone } from '../../types/telemetry';
+import { apiClient } from '../../services/apiClient';
+import { TelemetriaResponse } from '../../types/api';
+
+interface DeviceNode {
+  id: string;
+  name: string;
+  mac: string;
+  voltage: number;
+  current: number;
+  watts: number;
+  zone: 'Safe' | 'Warning' | 'Critical';
+}
+
+// Device registry: maps MAC addresses to friendly names
+const DEVICE_REGISTRY = [
+  { id: 'node_c3_01', name: 'Main Router (12V)', mac: '00:1B:44:11:3A:B7' },
+  { id: 'node_c3_02', name: 'Security Camera',   mac: '00:1B:44:11:3A:B8' },
+  { id: 'node_c3_03', name: 'Cooling Fan',        mac: '00:1B:44:11:3A:B9' },
+];
+
+const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
+  if (watts > 30) return 'Critical';
+  if (watts > 15) return 'Warning';
+  return 'Safe';
+};
 
 export const DevicesScreen = () => {
+  const [devices, setDevices] = useState<DeviceNode[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const getZoneStyles = (zone: BatteryZone) => {
+  const fetchDevices = async () => {
+    const results: DeviceNode[] = [];
+
+    for (const reg of DEVICE_REGISTRY) {
+      try {
+        const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(reg.mac, 1);
+        if (history && history.length > 0) {
+          const latest = history[0];
+          results.push({
+            id: reg.id,
+            name: reg.name,
+            mac: reg.mac,
+            voltage: latest.voltaje,
+            current: latest.corriente,
+            watts: latest.potencia,
+            zone: classifyZone(latest.potencia),
+          });
+        }
+      } catch {
+        // If a node fails, still show it with zeroed data
+        results.push({
+          id: reg.id,
+          name: reg.name,
+          mac: reg.mac,
+          voltage: 0,
+          current: 0,
+          watts: 0,
+          zone: 'Safe',
+        });
+      }
+    }
+
+    setDevices(results);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchDevices();
+    const intervalId = setInterval(fetchDevices, 5000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const getZoneStyles = (zone: string) => {
     switch (zone) {
       case 'Safe': return { color: '#10B981', bg: '#ECFDF5' };
       case 'Warning': return { color: '#F59E0B', bg: '#FFFBEB' };
@@ -16,44 +84,20 @@ export const DevicesScreen = () => {
     }
   };
 
-  const connectedNodes = [
-    { 
-      id: 'node_c3_01', 
-      name: 'Main Router (12V)', 
-      voltage: 11.9, 
-      current: 1.2, 
-      watts: 14.28, 
-      zone: 'Safe' as BatteryZone 
-    },
-    { 
-      id: 'node_c3_02', 
-      name: 'Security Camera', 
-      voltage: 12.1, 
-      current: 0.8, 
-      watts: 9.68, 
-      zone: 'Safe' as BatteryZone 
-    },
-    { 
-      id: 'node_c3_03', 
-      name: 'Cooling Fan', 
-      voltage: 10.8, 
-      current: 3.5, 
-      watts: 37.8, 
-      zone: 'Warning' as BatteryZone 
-    }
-  ];
-
-  const handleDevicePress = (deviceId: string) => {
-    router.push(`/devices/${deviceId}`);
+  const handleDevicePress = (device: DeviceNode) => {
+    router.push({
+      pathname: '/devices/[id]',
+      params: { id: device.id, mac: device.mac, name: device.name },
+    });
   };
 
-  const renderItem = ({ item }: { item: typeof connectedNodes[0] }) => {
+  const renderItem = ({ item }: { item: DeviceNode }) => {
     const zoneStyle = getZoneStyles(item.zone);
 
     return (
       <TouchableOpacity 
         style={styles.deviceCard} 
-        onPress={() => handleDevicePress(item.id)}
+        onPress={() => handleDevicePress(item)}
         activeOpacity={0.7}
       >
         <View style={[styles.deviceIconContainer, { backgroundColor: zoneStyle.bg }]}>
@@ -90,12 +134,19 @@ export const DevicesScreen = () => {
         </Text>
       </View>
 
-      <FlatList
-        data={connectedNodes}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
-      />
+      {isLoading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={{ color: '#94A3B8', marginTop: 10 }}>Querying nodes...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={devices}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContainer}
+        />
+      )}
     </SafeAreaView>
   );
 };

@@ -118,14 +118,14 @@ export const SettingsScreen = () => {
             <Switch value={notifyCritical} onValueChange={setNotifyCritical} trackColor={{ true: '#60A5FA', false: colors.border }} />
           </View>
           
-          <TouchableOpacity style={styles.row} onPress={() => alert('Threshold configuration coming soon')}>
+          <TouchableOpacity style={styles.row} onPress={() => router.push({ pathname: '/devices/[id]', params: { id: 'node_c3_01', mac: '00:1B:44:11:3A:B7', name: 'Main Router (12V)' }})}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconContainer, { backgroundColor: colors.iconBg }]}>
                 <Feather name="sliders" size={18} color={colors.textSecondary} />
               </View>
               <View>
                 <Text style={styles.rowTitle}>Custom Threshold Limits</Text>
-                <Text style={styles.rowSubtitle}>Configure max W and min V alerts</Text>
+                <Text style={styles.rowSubtitle}>Configure max W and min V alerts per device</Text>
               </View>
             </View>
             <Feather name="chevron-right" size={20} color={colors.border} />
