@@ -1,63 +1,24 @@
 import React from 'react';
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { styles } from './EventLogsScreen.styles';
-
-type LogType = 'CRITICAL' | 'WARNING' | 'AI_ACTION' | 'USER_ACTION' | 'SYSTEM';
-
-interface EventLog {
-  id: string;
-  type: LogType;
-  title: string;
-  message: string;
-  timestamp: string;
-  device_id?: string;
-}
-
-const MOCK_LOGS: EventLog[] = [
-  {
-    id: 'log_01',
-    type: 'AI_ACTION',
-    title: 'AI Load Shedding',
-    message: 'TinyML predicted critical discharge. Automatically powered off non-essential cooling fan to preserve battery life.',
-    timestamp: 'Today, 2:15 PM',
-    device_id: 'node_c3_03'
-  },
-  {
-    id: 'log_02',
-    type: 'WARNING',
-    title: 'High Consumption Detected',
-    message: 'Abnormal power draw (37.8W) detected on the circuit. Device flagged for monitoring.',
-    timestamp: 'Today, 2:10 PM',
-    device_id: 'node_c3_03'
-  },
-  {
-    id: 'log_03',
-    type: 'USER_ACTION',
-    title: 'Manual Override',
-    message: 'User remotely toggled the device ON via the mobile app dashboard.',
-    timestamp: 'Yesterday, 8:45 PM',
-    device_id: 'node_c3_01'
-  },
-  {
-    id: 'log_04',
-    type: 'CRITICAL',
-    title: 'Grid Power Outage',
-    message: 'Gateway detected 0V from the main grid. System successfully failed over to Battery Backup.',
-    timestamp: 'Yesterday, 8:40 PM',
-    device_id: 'gateway_esp32'
-  },
-  {
-    id: 'log_05',
-    type: 'SYSTEM',
-    title: 'System Initialized',
-    message: 'SmartSaver Gateway booted successfully and connected to LoRa nodes.',
-    timestamp: 'Yesterday, 8:00 PM'
-  }
-];
+import { useEventLogStore, EventLog, LogType } from '../../store/useEventLogStore';
 
 export const EventLogsScreen = () => {
+  const logs = useEventLogStore((s) => s.logs);
+  const clearLogs = useEventLogStore((s) => s.clearLogs);
+
+  const handleClear = () => {
+    Alert.alert(
+      'Borrar Todo el Historial',
+      '¿Estás seguro de que quieres borrar todo el historial de eventos? Esto no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Borrar', style: 'destructive', onPress: clearLogs },
+      ]
+    );
+  };
 
   const getLogStyles = (type: LogType) => {
     switch (type) {
@@ -70,9 +31,30 @@ export const EventLogsScreen = () => {
     }
   };
 
+  const formatTimestamp = (iso: string) => {
+    const date = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+
+    if (diffMins < 1) return 'Justo ahora';
+    if (diffMins < 60) return `hace ${diffMins}m`;
+    if (diffHours < 24) return `hace ${diffHours}h`;
+
+    // Beyond 24h, show date
+    const day = date.getDate();
+    const month = date.toLocaleString('es', { month: 'short' });
+    const hours = date.getHours();
+    const mins = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const h12 = hours % 12 || 12;
+    return `${month} ${day}, ${h12}:${mins} ${ampm}`;
+  };
+
   const renderLogItem = ({ item, index }: { item: EventLog, index: number }) => {
     const styleData = getLogStyles(item.type);
-    const isLast = index === MOCK_LOGS.length - 1;
+    const isLast = index === logs.length - 1;
 
     return (
       <View style={styles.logItemContainer}>
@@ -91,14 +73,14 @@ export const EventLogsScreen = () => {
               </View>
               <Text style={styles.logTitle}>{item.title}</Text>
             </View>
-            <Text style={styles.logTime}>{item.timestamp}</Text>
+            <Text style={styles.logTime}>{formatTimestamp(item.timestamp)}</Text>
           </View>
           
           <Text style={styles.logMessage}>{item.message}</Text>
           
-          {item.device_id && (
+          {item.device_name && (
             <View style={styles.deviceBadge}>
-              <Text style={styles.deviceBadgeText}>{item.device_id.toUpperCase()}</Text>
+              <Text style={styles.deviceBadgeText}>{item.device_name}</Text>
             </View>
           )}
         </View>
@@ -106,24 +88,44 @@ export const EventLogsScreen = () => {
     );
   };
 
+  const renderEmpty = () => (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 }}>
+      <Feather name="inbox" size={48} color="#CBD5E1" />
+      <Text style={{ color: '#94A3B8', fontSize: 16, fontWeight: '600', marginTop: 16 }}>
+        Aún no hay eventos registrados
+      </Text>
+      <Text style={{ color: '#CBD5E1', fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 40 }}>
+        Los eventos aparecerán aquí a medida que interactúes con tus dispositivos: encendidos/apagados, desconexiones, cambios de zona de IA, y más.
+      </Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Feather name="arrow-left" size={24} color="#0F172A" />
         </TouchableOpacity>
-        <View>
-          <Text style={styles.headerTitle}>Event Logs</Text>
-          <Text style={styles.headerSubtitle}>System History & AI Interventions</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Historial de Eventos</Text>
+          <Text style={styles.headerSubtitle}>
+            {logs.length > 0 ? `${logs.length} eventos registrados` : 'Historial del Sistema e Intervenciones de IA'}
+          </Text>
         </View>
+        {logs.length > 0 && (
+          <TouchableOpacity onPress={handleClear} style={{ padding: 8 }}>
+            <Feather name="trash-2" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <FlatList
-        data={MOCK_LOGS}
+        data={logs}
         keyExtractor={(item) => item.id}
         renderItem={renderLogItem}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={renderEmpty}
       />
     </SafeAreaView>
   );

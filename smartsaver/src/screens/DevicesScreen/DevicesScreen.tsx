@@ -17,10 +17,10 @@ interface DeviceNode {
 }
 
 // Device registry: maps MAC addresses to friendly names
-const DEVICE_REGISTRY = [
-  { id: 'node_c3_01', name: 'Main Router (12V)', mac: '00:1B:44:11:3A:B7' },
-  { id: 'node_c3_02', name: 'Security Camera',   mac: '00:1B:44:11:3A:B8' },
-  { id: 'node_c3_03', name: 'Cooling Fan',        mac: '00:1B:44:11:3A:B9' },
+export const DEVICE_REGISTRY = [
+  { id: 'node_c3_01', name: 'Router Principal (12V)', mac: '00:1B:44:11:3A:B7' },
+  { id: 'node_c3_02', name: 'Cámara de Seguridad',   mac: '00:1B:44:11:3A:B8' },
+  { id: 'node_c3_03', name: 'Ventilador',              mac: '00:1B:44:11:3A:B9' },
 ];
 
 const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
@@ -109,7 +109,7 @@ export const DevicesScreen = () => {
           <View style={styles.deviceMeta}>
             <View style={[styles.statusDot, { backgroundColor: zoneStyle.color }]} />
             <Text style={[styles.statusText, { color: zoneStyle.color }]}>
-              {item.zone}
+              {item.zone === 'Safe' ? 'Seguro' : item.zone === 'Warning' ? 'Alerta' : 'Crítico'}
             </Text>
             <Text style={styles.deviceMetaText}>
               {item.voltage.toFixed(1)}V • {item.watts.toFixed(1)}W
@@ -128,16 +128,16 @@ export const DevicesScreen = () => {
         <TouchableOpacity style={{ marginRight: 15, marginBottom: 15 }} onPress={() => router.back()}>
           <Feather name="arrow-left" size={24} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Active End-Devices</Text>
+        <Text style={styles.headerTitle}>Dispositivos Activos</Text>
         <Text style={styles.headerSubtitle}>
-          Sensors linked via LoRa Nodes (ESP32-C3)
+          Sensores enlazados vía Nodos LoRa (ESP32-C3)
         </Text>
       </View>
 
       {isLoading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#3B82F6" />
-          <Text style={{ color: '#94A3B8', marginTop: 10 }}>Querying nodes...</Text>
+          <Text style={{ color: '#94A3B8', marginTop: 10 }}>Consultando nodos...</Text>
         </View>
       ) : (
         <FlatList

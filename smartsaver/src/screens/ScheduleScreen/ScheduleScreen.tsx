@@ -6,7 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { styles } from './ScheduleScreen.styles';
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const HOURS = Array.from({ length: 12 }, (_, i) => (i + 1).toString());
 
 export const ScheduleScreen = () => {
@@ -56,10 +56,10 @@ export const ScheduleScreen = () => {
       };
       await AsyncStorage.setItem(`@schedule_${id}`, JSON.stringify(scheduleData));
       
-      Alert.alert("Success", "Operating schedule saved locally.");
+      Alert.alert("Éxito", "Horario de operación guardado localmente.");
       router.back();
     } catch (e) {
-      Alert.alert("Error", "Failed to save schedule.");
+      Alert.alert("Error", "Fallo al guardar el horario.");
     } finally {
       setIsSaving(false);
     }
@@ -79,9 +79,9 @@ export const ScheduleScreen = () => {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Feather name="x" size={24} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Device Schedule</Text>
+        <Text style={styles.headerTitle}>Horario del Dispositivo</Text>
         <TouchableOpacity onPress={saveSchedule} disabled={isSaving}>
-          <Text style={styles.saveButtonText}>{isSaving ? '...' : 'Save'}</Text>
+          <Text style={styles.saveButtonText}>{isSaving ? '...' : 'Guardar'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -90,8 +90,8 @@ export const ScheduleScreen = () => {
         <View style={styles.card}>
           <View style={styles.toggleContainer}>
             <View>
-              <Text style={styles.toggleLabel}>Enable Automation</Text>
-              <Text style={styles.toggleDesc}>Allow system to turn device ON/OFF automatically.</Text>
+              <Text style={styles.toggleLabel}>Habilitar Automatización</Text>
+              <Text style={styles.toggleDesc}>Permitir que el sistema encienda/apague el dispositivo automáticamente.</Text>
             </View>
             <Switch 
               value={isActive} 
@@ -101,7 +101,7 @@ export const ScheduleScreen = () => {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Operating Days</Text>
+        <Text style={styles.sectionTitle}>Días de Operación</Text>
         <View style={styles.card}>
           <View style={styles.daysContainer}>
             {DAYS.map((day, index) => {
@@ -122,11 +122,11 @@ export const ScheduleScreen = () => {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Operating Hours</Text>
+        <Text style={styles.sectionTitle}>Horas de Operación</Text>
         <View style={styles.card}>
           
           <View style={styles.timeRow}>
-            <Text style={styles.timeLabel}>Turn On Time</Text>
+            <Text style={styles.timeLabel}>Hora de Encendido</Text>
             <View style={styles.pickersWrapper}>
               <Picker
                 selectedValue={startHour}
@@ -149,7 +149,7 @@ export const ScheduleScreen = () => {
           </View>
           
           <View style={[styles.timeRow, { borderBottomWidth: 0 }]}>
-            <Text style={styles.timeLabel}>Turn Off Time</Text>
+            <Text style={styles.timeLabel}>Hora de Apagado</Text>
             <View style={styles.pickersWrapper}>
               <Picker
                 selectedValue={endHour}

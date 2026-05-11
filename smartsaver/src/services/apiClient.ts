@@ -1,8 +1,16 @@
-import { TelemetriaResponse, DispositivoEstado, DispositivoLimites } from '../types/api';
+import {
+  TelemetriaResponse,
+  DispositivoEstado,
+  DispositivoLimites,
+  DispositivoEstadoResponse,
+} from '../types/api';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
 
 export const apiClient = {
+  // ─── Diagnostics ────────────────────────────────────────
+
+  /** GET /health */
   healthCheck: async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/health`);
@@ -14,22 +22,22 @@ export const apiClient = {
     }
   },
 
+  // ─── Telemetry ──────────────────────────────────────────
+
+  /** GET /api/telemetria/{mac_dispositivo}?limite= */
   getTelemetryHistory: async (macDispositivo: string, limite: number = 50): Promise<TelemetriaResponse[]> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/telemetria/${macDispositivo}?limite=${limite}`);
-      if (!res.ok) {
-        return [];
-      }
+      if (!res.ok) return [];
       return res.json();
     } catch (e) {
       return [];
     }
   },
 
-  /**
-   * POST /api/comando/estado
-   * Toggle device power state (relay ON/OFF)
-   */
+  // ─── Control Commands ───────────────────────────────────
+
+  /** POST /api/comando/estado — Toggle device power state and sync DB */
   setDeviceState: async (payload: DispositivoEstado): Promise<boolean> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/comando/estado`, {
@@ -44,10 +52,7 @@ export const apiClient = {
     }
   },
 
-  /**
-   * POST /api/comando/limites
-   * Set operational safety limits (voltage, current, wattage thresholds)
-   */
+  /** POST /api/comando/limites — Set operational safety limits */
   setDeviceLimits: async (payload: DispositivoLimites): Promise<boolean> => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/comando/limites`, {
@@ -59,6 +64,19 @@ export const apiClient = {
     } catch (e) {
       console.warn('Failed to send device limits command:', e);
       return false;
+    }
+  },
+
+  // ─── Device State ───────────────────────────────────────
+
+  /** GET /api/dispositivos/{mac_dispositivo}/estado — Fetch current relay state from DB */
+  getDeviceConnectionState: async (macDispositivo: string): Promise<DispositivoEstadoResponse | null> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}/estado`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch (e) {
+      return null;
     }
   },
 };

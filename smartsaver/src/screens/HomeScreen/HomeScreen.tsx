@@ -1,24 +1,48 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, SafeAreaView, TouchableOpacity, ScrollView } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getStyles } from './HomeScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
+import { useUserStore } from '../../store/useUserStore';
+import { apiClient } from '../../services/apiClient';
+import { DEVICE_REGISTRY } from '../DevicesScreen/DevicesScreen';
 
 export const HomeScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
+  const userName = useUserStore((state) => state.userName);
   const colors = getColors(isDark);
   const styles = getStyles(colors);
+
+  const [onlineNodes, setOnlineNodes] = useState(0);
+
+  const fetchOnlineNodes = async () => {
+    try {
+      const results = await Promise.all(
+        DEVICE_REGISTRY.map((reg) => apiClient.getDeviceConnectionState(reg.mac))
+      );
+      const activeCount = results.filter((res) => res?.is_online).length;
+      setOnlineNodes(activeCount);
+    } catch (e) {
+      console.warn('Failed to fetch online nodes', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchOnlineNodes();
+    const interval = setInterval(fetchOnlineNodes, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
+
         {/* HEADER */}
         <View style={styles.headerContainer}>
           <View>
-            <Text style={styles.greetingText}>Welcome back,</Text>
+            <Text style={styles.greetingText}>Bienvenido, {userName || 'Usuario'}</Text>
             <Text style={styles.titleText}>SmartSaver Hub</Text>
           </View>
           <TouchableOpacity style={styles.notificationBadge}>
@@ -28,62 +52,62 @@ export const HomeScreen = () => {
 
         {/* SYSTEM STATUS CARD (Always maintains its own gradient identity) */}
         <LinearGradient
-          colors={['#3B82F6', '#2563EB']}
+          colors={onlineNodes > 0 ? ['#3B82F6', '#2563EB'] : ['#EF4444', '#DC2626']}
           style={styles.statusCard}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
           <View style={styles.statusHeader}>
             <Feather name="shield" size={20} color="#FFFFFF" />
-            <Text style={styles.statusTitle}>System Status</Text>
+            <Text style={styles.statusTitle}>Estado del Sistema</Text>
           </View>
-          <Text style={styles.statusValue}>Optimal</Text>
-          <Text style={styles.statusSubtext}>All 3 Nodes Online • AI Active</Text>
+          <Text style={styles.statusValue}>{onlineNodes > 0 ? 'Óptimo' : 'Crítico'}</Text>
+          <Text style={styles.statusSubtext}>{onlineNodes} Nodo{onlineNodes !== 1 ? 's' : ''} en Línea • IA {onlineNodes > 0 ? 'Activa' : 'Inactiva'}</Text>
         </LinearGradient>
 
         {/* QUICK LINKS SECTION */}
-        <Text style={styles.sectionHeader}>Quick Actions</Text>
-        
+        <Text style={styles.sectionHeader}>Acciones Rápidas</Text>
+
         <View style={styles.quickLinksGrid}>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.quickLinkCard}
             onPress={() => router.push('/devices')}
           >
             <View style={[styles.iconContainer, { backgroundColor: isDark ? '#1e3a8a' : '#EFF6FF', shadowColor: '#3B82F6' }]}>
               <Feather name="cpu" size={26} color="#3B82F6" />
             </View>
-            <Text style={styles.quickLinkText}>Devices</Text>
+            <Text style={styles.quickLinkText}>Dispositivos</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.quickLinkCard}
             onPress={() => router.push('/analytics')}
           >
             <View style={[styles.iconContainer, { backgroundColor: isDark ? '#4c1d95' : '#F5F3FF', shadowColor: '#8B5CF6' }]}>
               <Feather name="pie-chart" size={26} color="#8B5CF6" />
             </View>
-            <Text style={styles.quickLinkText}>Analytics</Text>
+            <Text style={styles.quickLinkText}>Analíticas</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.quickLinkCard}
             onPress={() => router.push('/logs')}
           >
             <View style={[styles.iconContainer, { backgroundColor: isDark ? '#064e3b' : '#ECFDF5', shadowColor: '#10B981' }]}>
               <Feather name="file-text" size={26} color="#10B981" />
             </View>
-            <Text style={styles.quickLinkText}>Event Logs</Text>
+            <Text style={styles.quickLinkText}>Historial</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.quickLinkCard}
             onPress={() => router.push('/settings')}
           >
             <View style={[styles.iconContainer, { backgroundColor: isDark ? '#334155' : '#F8FAFC', shadowColor: '#64748B' }]}>
               <Feather name="settings" size={26} color={isDark ? '#cbd5e1' : '#64748B'} />
             </View>
-            <Text style={styles.quickLinkText}>Settings</Text>
+            <Text style={styles.quickLinkText}>Ajustes</Text>
           </TouchableOpacity>
 
         </View>
