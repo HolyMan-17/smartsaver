@@ -5,20 +5,22 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserStore } from '../../store/useUserStore';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 const { width } = Dimensions.get('window');
 
 export const OnboardingScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = getColors(isDark);
-  const { setUserName } = useUserStore();
+const { setUserName } = useUserStore();
+  const authUser = useAuthStore((state) => state.user);
   
-  const [name, setName] = useState('');
+  const [name, setName] = useState(authUser?.name || '');
 
   const handleContinue = async () => {
     if (name.trim().length === 0) return;
     await setUserName(name.trim());
-    router.replace('/'); // Redirect to Home
+    router.replace('/');
   };
 
   return (

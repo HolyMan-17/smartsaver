@@ -2,6 +2,9 @@ import { IoTGatewayPayload } from '../types/telemetry';
 
 type MessageCallback = (data: IoTGatewayPayload) => void;
 type StatusCallback = (isConnected: boolean) => void;
+type TokenGetter = () => Promise<string | null>;
+
+const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL || 'wss://api.thesisbroker.com/ws/telemetry';
 
 class WebSocketService {
   private ws: WebSocket | null = null;
@@ -9,7 +12,8 @@ class WebSocketService {
   private reconnectInterval: number = 2000;
   private maxReconnectInterval: number = 30000;
   private shouldReconnect: boolean = true;
-  
+  private tokenGetter: TokenGetter | null = null;
+
   private messageListeners: Set<MessageCallback> = new Set();
   private statusListeners: Set<StatusCallback> = new Set();
 
@@ -17,16 +21,29 @@ class WebSocketService {
     this.url = url;
   }
 
-  public connect() {
+  public setTokenGetter(fn: TokenGetter) {
+    this.tokenGetter = fn;
+  }
+
+  public async connect() {
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
-        return;
+      return;
     }
 
     this.shouldReconnect = true;
-    this.ws = new WebSocket(this.url);
+
+    let connectUrl = this.url;
+    if (this.tokenGetter) {
+      const token = await this.tokenGetter();
+      if (token) {
+        const separator = this.url.includes('?') ? '&' : '?';
+        connectUrl = `${this.url}${separator}token=${encodeURIComponent(token)}`;
+      }
+    }
+
+    this.ws = new WebSocket(connectUrl);
 
     this.ws.onopen = () => {
-      console.log(`[WebSocket] Connected to ${this.url}`);
       this.reconnectInterval = 2000;
       this.notifyStatusListeners(true);
     };
@@ -35,19 +52,24 @@ class WebSocketService {
       try {
         const data: IoTGatewayPayload = JSON.parse(event.data);
         this.notifyMessageListeners(data);
-      } catch (error) {
-        console.error('[WebSocket] JSON Parse Error:', error);
+      } catch {
+        // Ignore malformed messages
       }
     };
 
-    this.ws.onerror = (error) => {
-      console.error('[WebSocket] Error occurred:', error);
+    this.ws.onerror = () => {
+      // Error details are logged via onclose
     };
 
     this.ws.onclose = (event) => {
-      console.log(`[WebSocket] Disconnected (Code: ${event.code})`);
       this.notifyStatusListeners(false);
       this.ws = null;
+
+      // Auth failure — don't reconnect, force re-login
+      if (event.code === 4001) {
+        this.shouldReconnect = false;
+        return;
+      }
 
       if (this.shouldReconnect) {
         this.attemptReconnect();
@@ -63,7 +85,6 @@ class WebSocketService {
   }
 
   private attemptReconnect() {
-    console.log(`[WebSocket] Attempting to reconnect in ${this.reconnectInterval}ms...`);
     setTimeout(() => {
       if (this.shouldReconnect) {
         this.connect();
@@ -91,6 +112,4 @@ class WebSocketService {
   }
 }
 
-// Ensure the backend isn't real yet, just mock the URL or leave it. The user said don't connect to real backend yet.
-// For now, use a dummy local URL.
-export const wsService = new WebSocketService('ws://localhost:8000/ws/telemetry');
+export const wsService = new WebSocketService(WS_BASE_URL);

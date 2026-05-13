@@ -39,13 +39,18 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
+      "auth0Domain": "thesisbroker.us.auth0.com",
+      "auth0ClientId": "iCnC8XXZHeaCNdsEULmtIYD5YL01QdDU",
+      "auth0Audience": "https://api.thesisbroker.com",
       "router": {},
       "eas": {
         "projectId": "5a5017d2-dbb3-43b4-93b5-bc2519bd15ef"

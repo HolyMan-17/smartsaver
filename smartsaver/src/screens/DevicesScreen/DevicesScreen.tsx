@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { styles } from './DevicesScreen.styles';
 import { apiClient } from '../../services/apiClient';
-import { TelemetriaResponse } from '../../types/api';
+import { TelemetriaResponse, DispositivoResponse } from '../../types/api';
 
 interface DeviceNode {
   id: string;
@@ -16,7 +16,7 @@ interface DeviceNode {
   zone: 'Safe' | 'Warning' | 'Critical';
 }
 
-// Device registry: maps MAC addresses to friendly names
+// Fallback device registry — used only when API is unavailable
 export const DEVICE_REGISTRY = [
   { id: 'node_c3_01', name: 'Router Principal (12V)', mac: '00:1B:44:11:3A:B7' },
   { id: 'node_c3_02', name: 'Cámara de Seguridad',   mac: '00:1B:44:11:3A:B8' },
@@ -36,6 +36,43 @@ export const DevicesScreen = () => {
   const fetchDevices = async () => {
     const results: DeviceNode[] = [];
 
+    try {
+      const apiDevices: DispositivoResponse[] = await apiClient.getDevices();
+
+      if (apiDevices && apiDevices.length > 0) {
+        for (const device of apiDevices) {
+          try {
+            const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(device.mac, 1);
+            const latest = history?.[0];
+            results.push({
+              id: String(device.id),
+              name: device.nombre_personalizado || device.mac,
+              mac: device.mac,
+              voltage: latest?.voltaje ?? 0,
+              current: latest?.corriente ?? 0,
+              watts: latest?.potencia ?? 0,
+              zone: latest ? classifyZone(latest.potencia) : 'Safe',
+            });
+          } catch {
+            results.push({
+              id: String(device.id),
+              name: device.nombre_personalizado || device.mac,
+              mac: device.mac,
+              voltage: 0,
+              current: 0,
+              watts: 0,
+              zone: 'Safe',
+            });
+          }
+        }
+        setDevices(results);
+        setIsLoading(false);
+        return;
+      }
+    } catch {
+      // API unavailable — fall back to hardcoded registry
+    }
+
     for (const reg of DEVICE_REGISTRY) {
       try {
         const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(reg.mac, 1);
@@ -52,7 +89,6 @@ export const DevicesScreen = () => {
           });
         }
       } catch {
-        // If a node fails, still show it with zeroed data
         results.push({
           id: reg.id,
           name: reg.name,

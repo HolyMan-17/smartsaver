@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from './DeviceDetailScreen.styles';
 import { apiClient } from '../../services/apiClient';
+import { DispositivoLimitesCommand } from '../../types/api';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
 import { sendLocalNotification } from '../../utils/notifications';
@@ -76,7 +77,7 @@ export const DeviceDetailScreen = () => {
     // Fetch telemetry AND connection state concurrently to avoid network waterfalls
     const [telemetryResult, connectionResult] = await Promise.all([
       apiClient.getTelemetryHistory(mac, 1),
-      apiClient.getDeviceConnectionState(mac),
+      apiClient.getDeviceDetail(mac),
     ]);
 
     // Process telemetry
@@ -115,7 +116,7 @@ export const DeviceDetailScreen = () => {
       if ((overVoltage || overCurrent || overPower) && isOnRef.current) {
         // Enforce shutdown
         setIsOn(false); // Optimistic UI update
-        apiClient.setDeviceState({ mac_dispositivo: mac, encendido: false });
+        apiClient.setDeviceState(mac, false);
         
         let reason = [];
         if (overVoltage) reason.push(`Voltaje (${latest.voltaje.toFixed(1)}V > ${limits.v}V)`);
@@ -179,10 +180,7 @@ export const DeviceDetailScreen = () => {
     const newState = !isOn;
     
     setIsSendingCommand(true);
-    const success = await apiClient.setDeviceState({
-      mac_dispositivo: mac,
-      encendido: newState,
-    });
+    const success = await apiClient.setDeviceState(mac, newState);
     setIsSendingCommand(false);
 
     if (success) {
@@ -201,25 +199,50 @@ export const DeviceDetailScreen = () => {
     }
   };
 
+  const LIMIT_BOUNDS: Record<string, { min: number; max: number; label: string; unit: string }> = {
+    voltaje:   { min: 0.1, max: 60,  label: 'Voltaje',   unit: 'V' },
+    corriente: { min: 0.1, max: 30,  label: 'Corriente', unit: 'A' },
+    potencia:  { min: 0.1, max: 500, label: 'Potencia',  unit: 'W' },
+  };
+
+  const validateLimit = (raw: string, bounds: { min: number; max: number; label: string; unit: string }): string | null => {
+    if (!raw.trim()) return null;
+    const val = parseFloat(raw);
+    if (isNaN(val) || !isFinite(val)) return `${bounds.label} debe ser un número válido.`;
+    if (val < bounds.min) return `${bounds.label} debe ser mayor a ${bounds.min}${bounds.unit}.`;
+    if (val > bounds.max) return `${bounds.label} no puede exceder ${bounds.max}${bounds.unit}.`;
+    return null;
+  };
+
   // ── POST /api/comando/limites ──
   const handleSaveLimits = async () => {
     if (!mac) return;
 
-    const payload: any = { mac_dispositivo: mac };
-    if (limVoltaje.trim()) payload.limite_voltaje = parseFloat(limVoltaje);
-    if (limCorriente.trim()) payload.limite_corriente = parseFloat(limCorriente);
-    if (limPotencia.trim()) payload.limite_potencia = parseFloat(limPotencia);
+    const errors = [
+      validateLimit(limVoltaje, LIMIT_BOUNDS.voltaje),
+      validateLimit(limCorriente, LIMIT_BOUNDS.corriente),
+      validateLimit(limPotencia, LIMIT_BOUNDS.potencia),
+    ].filter(Boolean);
+
+    if (errors.length > 0) {
+      Alert.alert('Valores Inválidos', errors.join('\n'));
+      return;
+    }
+
+    const limits: DispositivoLimitesCommand = {};
+    if (limVoltaje.trim()) limits.limite_voltaje = parseFloat(limVoltaje);
+    if (limCorriente.trim()) limits.limite_corriente = parseFloat(limCorriente);
+    if (limPotencia.trim()) limits.limite_potencia = parseFloat(limPotencia);
 
     setIsSendingCommand(true);
-    const success = await apiClient.setDeviceLimits(payload);
+    const success = await apiClient.setDeviceLimits(mac, limits);
     setIsSendingCommand(false);
 
     if (success) {
       setShowLimitsModal(false);
-      // ── Log limits update ──
       const parts = [];
       const newLimits: {v?: number, c?: number, p?: number} = {};
-      
+
       if (limVoltaje.trim()) {
         parts.push(`V≤${limVoltaje}`);
         newLimits.v = parseFloat(limVoltaje);

@@ -1,19 +1,21 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { LogBox } from 'react-native';
+import { LogBox, ActivityIndicator, View } from 'react-native';
 import 'react-native-reanimated';
 import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { requestNotificationPermissions } from '../src/utils/notifications';
 import { useUserStore } from '../src/store/useUserStore';
+import { useAuthStore } from '../src/store/useAuthStore';
+import { setAccessTokenGetter } from '../src/services/apiClient';
+import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
 
 export const unstable_settings = {
   anchor: 'index',
 };
 
-// Ignore Expo Go push notification warning since we only use local notifications
 LogBox.ignoreLogs([
   'expo-notifications: Android Push notifications (remote notifications)',
 ]);
@@ -21,11 +23,28 @@ LogBox.ignoreLogs([
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const loadUser = useUserStore((state) => state.loadUser);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const rehydrate = useAuthStore((state) => state.rehydrate);
 
   useEffect(() => {
     requestNotificationPermissions();
     loadUser();
+    rehydrate();
+    setAccessTokenGetter(useAuthStore.getState().getAccessToken);
   }, []);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

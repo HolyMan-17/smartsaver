@@ -7,6 +7,7 @@ import { getStyles } from './SettingsScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 export const SettingsScreen = () => {
   // Theme state
@@ -18,6 +19,8 @@ export const SettingsScreen = () => {
   const clearLogs = useEventLogStore((s) => s.clearLogs);
   const userName = useUserStore((s) => s.userName);
   const resetUser = useUserStore((s) => s.resetUser);
+  const logout = useAuthStore((s) => s.logout);
+  const authUser = useAuthStore((s) => s.user);
 
   // Mock State for Toggles
   const [enableAI, setEnableAI] = useState(true);
@@ -30,7 +33,7 @@ export const SettingsScreen = () => {
   const handleClearCache = () => {
     Alert.alert(
       'Restablecer Aplicación', 
-      'Esto borrará tu nombre, preferencias locales y registros guardados en el teléfono. Volverás a la pantalla de bienvenida. ¿Estás seguro?',
+      'Esto cerrará tu sesión, borrará todos los datos locales y volverás a la pantalla de inicio de sesión. ¿Estás seguro?',
       [
         { text: 'Cancelar', style: 'cancel' },
         { 
@@ -40,9 +43,29 @@ export const SettingsScreen = () => {
             clearLogs();
             await AsyncStorage.clear();
             await resetUser();
-            router.replace('/onboarding');
+            await logout();
           } 
         }
+      ]
+    );
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      'Se cerrará tu sesión en este dispositivo. ¿Estás seguro?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Cerrar Sesión',
+          style: 'destructive',
+          onPress: async () => {
+            clearLogs();
+            await AsyncStorage.clear();
+            await resetUser();
+            await logout();
+          },
+        },
       ]
     );
   };
@@ -73,7 +96,35 @@ export const SettingsScreen = () => {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* 1. NETWORK & CONNECTIVITY */}
+        {/* 1. ACCOUNT */}
+        <Text style={styles.sectionTitle}>Cuenta</Text>
+        <View style={styles.card}>
+          <View style={[styles.row, styles.rowNoBorder]}>
+            <View style={styles.rowLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.infoBg }]}>
+                <Feather name="user" size={18} color="#3B82F6" />
+              </View>
+              <View>
+                <Text style={styles.rowTitle}>{authUser?.email || userName || 'Usuario'}</Text>
+                <Text style={styles.rowSubtitle}>Sesión activa</Text>
+              </View>
+            </View>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>Autenticado</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.row} onPress={handleLogout}>
+            <View style={styles.rowLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: colors.dangerBg }]}>
+                <Feather name="log-out" size={18} color="#EF4444" />
+              </View>
+              <Text style={[styles.rowTitle, styles.dangerText]}>Cerrar Sesión</Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={colors.border} />
+          </TouchableOpacity>
+        </View>
+
+        {/* 2. NETWORK & CONNECTIVITY */}
         <Text style={styles.sectionTitle}>Red y Conectividad</Text>
         <View style={styles.card}>
           <View style={[styles.row, styles.rowNoBorder]}>
@@ -83,7 +134,7 @@ export const SettingsScreen = () => {
               </View>
               <View>
                 <Text style={styles.rowTitle}>Estado del Servidor</Text>
-                <Text style={styles.rowSubtitle}>api.smartsaver.local</Text>
+                <Text style={styles.rowSubtitle}>api.thesisbroker.com</Text>
               </View>
             </View>
             <View style={styles.badge}>

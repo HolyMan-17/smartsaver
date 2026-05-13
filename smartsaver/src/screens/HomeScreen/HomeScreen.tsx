@@ -8,6 +8,7 @@ import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useUserStore } from '../../store/useUserStore';
 import { apiClient } from '../../services/apiClient';
 import { DEVICE_REGISTRY } from '../DevicesScreen/DevicesScreen';
+import { DispositivoResponse } from '../../types/api';
 
 export const HomeScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
@@ -19,13 +20,24 @@ export const HomeScreen = () => {
 
   const fetchOnlineNodes = async () => {
     try {
+      const apiDevices: DispositivoResponse[] = await apiClient.getDevices();
+      if (apiDevices && apiDevices.length > 0) {
+        const activeCount = apiDevices.filter((d) => d.is_online).length;
+        setOnlineNodes(activeCount);
+        return;
+      }
+    } catch {
+      // API unavailable — fall back to hardcoded registry
+    }
+
+    try {
       const results = await Promise.all(
-        DEVICE_REGISTRY.map((reg) => apiClient.getDeviceConnectionState(reg.mac))
+        DEVICE_REGISTRY.map((reg) => apiClient.getDeviceDetail(reg.mac))
       );
       const activeCount = results.filter((res) => res?.is_online).length;
       setOnlineNodes(activeCount);
-    } catch (e) {
-      console.warn('Failed to fetch online nodes', e);
+    } catch {
+      // Both API and fallback failed — keep last known value
     }
   };
 

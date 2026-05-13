@@ -13,8 +13,9 @@ import { TelemetriaResponse } from '../../types/api';
 
 const { width } = Dimensions.get('window');
 
-export const AnalyticsScreen = () => {
+export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const userName = useUserStore((state) => state.userName);
+  const deviceMac = mac || '00:1B:44:11:3A:B7';
   const [lineValues, setLineValues] = useState<{value: number; label: string}[]>([]);
   const [pieValues, setPieValues] = useState([
     { value: 1, color: '#3B82F6' },
@@ -27,7 +28,7 @@ export const AnalyticsScreen = () => {
 
   const fetchData = async () => {
     try {
-      const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory('00:1B:44:11:3A:B7', 30);
+      const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(deviceMac, 30);
       
       if (history && history.length > 0) {
         setRawHistory(history);
