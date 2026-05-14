@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
+import { authConfig } from '../../services/authService';
 import { styles } from './LoginScreen.styles';
 
 export const LoginScreen = () => {
@@ -40,7 +41,7 @@ export const LoginScreen = () => {
         <Text style={[styles.title, { color: colors.text }]}>SmartSaver Hub</Text>
 
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Centro de control inteligente para tus dispositivos IoT. Monitorea y protege tu hardware con TinyML.
+          Antes de continuar, crea o inicia sesion con tu cuenta para acceder al centro de control.
         </Text>
 
         {error && (
@@ -79,6 +80,20 @@ export const LoginScreen = () => {
             Autenticación segura con cifrado de extremo a extremo
           </Text>
         </View>
+
+        {__DEV__ && (
+          <TouchableOpacity
+            style={{ marginTop: 24, padding: 12, backgroundColor: '#1E293B', borderRadius: 8 }}
+            onPress={() => Alert.alert('Redirect URI', authConfig.redirectUri)}
+          >
+            <Text style={{ color: '#94A3B8', fontSize: 10, marginBottom: 4 }}>
+              DEV — Auth0 Callback URL (tap to show alert):
+            </Text>
+            <Text style={{ color: '#38BDF8', fontSize: 11, fontFamily: 'monospace' }} selectable>
+              {authConfig.redirectUri}
+            </Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

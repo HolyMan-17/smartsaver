@@ -65,13 +65,15 @@ async function authenticatedFetch(
 
 // ─── GET /api/dispositivos — List user's devices ─────────────
 
-async function getDevices(): Promise<DispositivoResponse[]> {
+async function getDevices(): Promise<DispositivoResponse[] | null> {
   try {
     const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos`);
-    if (!res.ok) return [];
-    return res.json();
+    if (!res.ok) return null;
+    const devices: DispositivoResponse[] = await res.json();
+    // Temporary filter to hide the accidentally claimed mock devices
+    return devices.filter(d => !['00:1B:44:11:3A:B8', '00:1B:44:11:3A:B9'].includes(d.mac));
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -131,6 +133,19 @@ export const apiClient = {
   getDeviceDetail: async (macDispositivo: string): Promise<DispositivoResponse | null> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  registerDevice: async (mac: string): Promise<DispositivoResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos`, {
+        method: 'POST',
+        body: JSON.stringify({ mac }),
+      });
       if (!res.ok) return null;
       return res.json();
     } catch {

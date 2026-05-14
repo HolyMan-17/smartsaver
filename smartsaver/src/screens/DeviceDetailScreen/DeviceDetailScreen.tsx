@@ -153,6 +153,13 @@ export const DeviceDetailScreen = () => {
 
     // Process connection state (API is the Single Source of Truth)
     const newOnline = connectionResult?.is_online ?? false;
+    
+    // Sync power state from backend
+    if (connectionResult && connectionResult.is_encendido !== undefined) {
+      setIsOn(connectionResult.is_encendido);
+      isOnRef.current = connectionResult.is_encendido;
+    }
+
     // ── Log connection state changes ──
     if (prevOnline.current !== null && prevOnline.current !== newOnline) {
       if (!newOnline) {

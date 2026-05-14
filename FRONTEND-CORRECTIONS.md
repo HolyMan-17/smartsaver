@@ -135,7 +135,6 @@ Response: `200` with full `DispositivoResponse`.
 | `forbidden` | 403 | No device access |
 | `not_found` | 404 | Device not found |
 | `validation_error` | 422 | Bad input |
-| `rate_limited` | 429 | Too many requests |
 
 ---
 

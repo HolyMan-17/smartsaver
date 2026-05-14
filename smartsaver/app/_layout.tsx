@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox, ActivityIndicator, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import 'react-native-reanimated';
 import { useEffect } from 'react';
 
@@ -11,6 +12,10 @@ import { useUserStore } from '../src/store/useUserStore';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
+
+// Must be at app root level so it intercepts the Auth0 callback
+// deep link BEFORE Expo Router tries to match it as a route.
+WebBrowser.maybeCompleteAuthSession();
 
 export const unstable_settings = {
   anchor: 'index',

@@ -12,9 +12,9 @@ const { width } = Dimensions.get('window');
 export const OnboardingScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = getColors(isDark);
-const { setUserName } = useUserStore();
+  const { setUserName } = useUserStore();
   const authUser = useAuthStore((state) => state.user);
-  
+
   const [name, setName] = useState(authUser?.name || '');
 
   const handleContinue = async () => {
@@ -25,7 +25,7 @@ const { setUserName } = useUserStore();
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
@@ -33,17 +33,17 @@ const { setUserName } = useUserStore();
           <View style={styles.iconWrapper}>
             <Feather name="zap" size={48} color="#3B82F6" />
           </View>
-          
+
           <Text style={[styles.title, { color: colors.text }]}>¡Bienvenido a SmartSaver!</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            El centro de control inteligente para tu hardware IoT. Monitorea y protege tus dispositivos con TinyML.
+            El centro de control del sistema integrado para el control de consumo de energia en artefactos electricos con inteligencia artificial. Monitorea y protege la vida util de tus equipos.
           </Text>
 
           <View style={styles.inputContainer}>
             <Text style={[styles.label, { color: colors.text }]}>¿Cómo deberíamos llamarte?</Text>
             <TextInput
               style={[
-                styles.input, 
+                styles.input,
                 { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }
               ]}
               placeholder="Tu nombre o apodo"
@@ -56,7 +56,7 @@ const { setUserName } = useUserStore();
             />
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.button, name.trim().length === 0 && styles.buttonDisabled]}
             disabled={name.trim().length === 0}
             onPress={handleContinue}

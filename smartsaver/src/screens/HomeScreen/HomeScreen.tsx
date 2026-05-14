@@ -20,8 +20,9 @@ export const HomeScreen = () => {
 
   const fetchOnlineNodes = async () => {
     try {
-      const apiDevices: DispositivoResponse[] = await apiClient.getDevices();
-      if (apiDevices && apiDevices.length > 0) {
+      const apiDevices = await apiClient.getDevices();
+      if (apiDevices !== null) {
+        // API succeeded. Use its response, even if empty.
         const activeCount = apiDevices.filter((d) => d.is_online).length;
         setOnlineNodes(activeCount);
         return;
@@ -30,6 +31,7 @@ export const HomeScreen = () => {
       // API unavailable — fall back to hardcoded registry
     }
 
+    // Only reached if API call returns null (error) or throws
     try {
       const results = await Promise.all(
         DEVICE_REGISTRY.map((reg) => apiClient.getDeviceDetail(reg.mac))

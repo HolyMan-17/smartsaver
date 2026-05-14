@@ -1,4 +1,9 @@
-import { exchangeCodeAsync, refreshAsync } from 'expo-auth-session';
+import {
+  AuthRequest,
+  exchangeCodeAsync,
+  makeRedirectUri,
+  refreshAsync,
+} from 'expo-auth-session';
 import { openAuthSessionAsync } from 'expo-web-browser';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
@@ -28,90 +33,84 @@ const discovery = {
 };
 
 const LOGOUT_ENDPOINT = `https://${AUTH0_DOMAIN}/v2/logout`;
+const REDIRECT_URI = makeRedirectUri({
+  scheme: 'smartsaver',
+  path: 'callback',
+});
 
-function generateRandomString(length: number = 32): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+console.log('============================================');
+console.log('[Auth] REDIRECT URI (add to Auth0 dashboard):');
+console.log(REDIRECT_URI);
+console.log('============================================');
+
+function base64Decode(str: string): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  const cleaned = str.replace(/=+$/, '');
+  for (let i = 0; i < cleaned.length; i += 4) {
+    const a = chars.indexOf(cleaned[i]);
+    const b = chars.indexOf(cleaned[i + 1]);
+    const c = i + 2 < cleaned.length ? chars.indexOf(cleaned[i + 2]) : 0;
+    const d = i + 3 < cleaned.length ? chars.indexOf(cleaned[i + 3]) : 0;
+    result += String.fromCharCode((a << 2) | (b >> 4));
+    if (i + 2 < cleaned.length) result += String.fromCharCode(((b & 0xf) << 4) | (c >> 2));
+    if (i + 3 < cleaned.length) result += String.fromCharCode(((c & 0x3) << 6) | d);
   }
   return result;
 }
 
-async function pkceChallenge(verifier: string): Promise<string> {
-  const encoded = new TextEncoder().encode(verifier);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const base64 = btoa(String.fromCharCode(...hashArray));
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-let currentVerifier: string | null = null;
-let currentChallenge: string | null = null;
-
 export async function loginWithAuth0(): Promise<AuthTokens | null> {
-  currentVerifier = generateRandomString();
-  currentChallenge = await pkceChallenge(currentVerifier);
+  const request = new AuthRequest({
+    clientId: AUTH0_CLIENT_ID,
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'read:devices', 'write:devices', 'read:logs'],
+    redirectUri: REDIRECT_URI,
+    extraParams: {
+      audience: AUTH0_AUDIENCE,
+    },
+    usePKCE: true,
+  });
 
-  const redirectUri = 'smartsaver://callback';
-  const state = generateRandomString(16);
+  console.log('[Auth] Prompting for login...');
+  const result = await request.promptAsync(discovery);
+  console.log('[Auth] promptAsync result:', result.type, result.type === 'success' ? 'code=' + (result.params?.code ? 'yes' : 'no') : '');
 
-  const authUrl = [
-    `https://${AUTH0_DOMAIN}/authorize?`,
-    `response_type=code`,
-    `&client_id=${encodeURIComponent(AUTH0_CLIENT_ID)}`,
-    `&redirect_uri=${encodeURIComponent(redirectUri)}`,
-    `&audience=${encodeURIComponent(AUTH0_AUDIENCE)}`,
-    `&scope=${encodeURIComponent('openid profile email offline_access read:devices write:devices read:logs')}`,
-    `&code_challenge=${encodeURIComponent(currentChallenge!)}`,
-    `&code_challenge_method=S256`,
-    `&state=${encodeURIComponent(state)}`,
-  ].join('');
-
-  try {
-    const result = await openAuthSessionAsync(authUrl, redirectUri);
-
-    if (result.type === 'success' && result.url) {
-      const url = new URL(result.url);
-      const code = url.searchParams.get('code');
-      const returnedState = url.searchParams.get('state');
-
-      if (!code || returnedState !== state) {
-        throw new Error('Invalid OAuth response');
-      }
-
-      const tokenResult = await exchangeCodeAsync(
-        {
-          clientId: AUTH0_CLIENT_ID,
-          code,
-          redirectUri,
-          extraParams: {
-            code_verifier: currentVerifier,
-          },
-        },
-        discovery,
-      );
-
-      const tokens: AuthTokens = {
-        accessToken: tokenResult.accessToken,
-        refreshToken: tokenResult.refreshToken ?? null,
-        idToken: tokenResult.idToken ?? '',
-        expiresIn: tokenResult.expiresIn ?? 900,
-        tokenExpiry: Date.now() + (tokenResult.expiresIn ?? 900) * 1000,
-      };
-
-      await saveTokens(tokens);
-      return tokens;
-    }
-
+  if (result.type !== 'success') {
+    console.log('[Auth] Login cancelled or failed:', result.type);
     return null;
-  } catch (error) {
-    console.error('[Auth] Login failed:', error);
-    throw error;
-  } finally {
-    currentVerifier = null;
-    currentChallenge = null;
   }
+
+  const { code } = result.params;
+  if (!code) {
+    console.error('[Auth] No authorization code in response');
+    throw new Error('No authorization code received');
+  }
+
+  console.log('[Auth] Exchanging code for tokens...');
+
+  const tokenResult = await exchangeCodeAsync(
+    {
+      clientId: AUTH0_CLIENT_ID,
+      code,
+      redirectUri: REDIRECT_URI,
+      extraParams: {
+        code_verifier: request.codeVerifier || '',
+      },
+    },
+    discovery,
+  );
+
+  console.log('[Auth] Tokens received, accessToken:', tokenResult.accessToken ? 'yes' : 'no');
+
+  const tokens: AuthTokens = {
+    accessToken: tokenResult.accessToken,
+    refreshToken: tokenResult.refreshToken ?? null,
+    idToken: tokenResult.idToken ?? '',
+    expiresIn: tokenResult.expiresIn ?? 900,
+    tokenExpiry: Date.now() + (tokenResult.expiresIn ?? 900) * 1000,
+  };
+
+  await saveTokens(tokens);
+  return tokens;
 }
 
 export async function refreshAccessToken(): Promise<AuthTokens | null> {
@@ -169,7 +168,7 @@ export async function getAuthUser(): Promise<AuthUser | null> {
     const base64Url = idToken.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = decodeURIComponent(
-      atob(base64)
+      base64Decode(base64)
         .split('')
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
         .join(''),
@@ -190,10 +189,10 @@ export async function getAuthUser(): Promise<AuthUser | null> {
 
 export async function logoutAuth0(): Promise<void> {
   try {
-    const returnTo = encodeURIComponent('smartsaver://callback');
+    const returnTo = encodeURIComponent(REDIRECT_URI);
     await openAuthSessionAsync(
       `${LOGOUT_ENDPOINT}?client_id=${AUTH0_CLIENT_ID}&returnTo=${returnTo}`,
-      'smartsaver://callback',
+      REDIRECT_URI,
     );
   } catch {
     // If browser logout fails, continue with local cleanup
@@ -241,6 +240,7 @@ export const authConfig = {
   domain: AUTH0_DOMAIN,
   clientId: AUTH0_CLIENT_ID,
   audience: AUTH0_AUDIENCE,
+  redirectUri: REDIRECT_URI,
   discovery,
   secureStoreKeys: SECURE_STORE_KEYS,
 };

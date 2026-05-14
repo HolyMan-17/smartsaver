@@ -2,6 +2,8 @@
 
 *This document is a two-sided contract. The frontend has been implemented per the decisions in PLAN.md. The backend agent should verify their implementation against every row in this document. If anything does not match, flag it immediately before integration testing.*
 
+> **⚠️ MUST READ FIRST:** `CORRECTIONS.md` — Device pairing is hardware-only. App never registers or claims devices.
+
 ---
 
 ## 1. Environment Variables (Both Sides)
@@ -212,7 +214,6 @@ Every error response from the backend must use this exact shape. The frontend do
 | `forbidden` | 403 | Shows alert "Dispositivo no autorizado". Does NOT retry. |
 | `not_found` | 404 | Shows alert with `message`. Falls back to cached/hardcoded data. |
 | `validation_error` | 422 | Shows alert with `message`. Keeps modal open for correction. |
-| `rate_limited` | 429 | Shows alert "Demasiadas solicitudes. Inténtalo de nuevo." |
 
 ---
 
@@ -362,45 +363,50 @@ Run these steps in order to verify frontend-backend compatibility.
 - [ ] Auth0 Post-Login Action calls `POST /api/users/sync` → backend returns `{"status": "synced"}`
 - [ ] User appears in `usuarios` table with correct `auth0_id`, `email`, `nombre`
 
-### Test 2: Authenticated API Call
+### Test 2: Pre-Seed Device (Backend / Hardware Process)
+**The app does NOT register devices.** You must seed the device and permission rows manually:
+- [ ] `artefactos` row exists for MAC `00:1B:44:11:3A:B7`
+- [ ] `permisos_usuario_artefacto` row links user to device with `nivel_acceso = 'ADMIN'`
+
+### Test 3: Authenticated API Call
 - [ ] Frontend calls `GET /api/dispositivos` with `Authorization: Bearer <token>`
 - [ ] Backend validates JWT successfully
 - [ ] Backend looks up user by `sub` claim → finds row in `usuarios`
 - [ ] Backend returns user's devices (or empty array if no permissions yet)
 
-### Test 3: Device Detail
+### Test 4: Device Detail
 - [ ] Frontend calls `GET /api/dispositivos/00:1B:44:11:3A:B7`
 - [ ] Backend returns device object with all fields (`id`, `mac`, `nombre_personalizado`, `is_online`, `is_encendido`, etc.)
 - [ ] If device not found → backend returns `{"error": "not_found", "message": "...", "mac": "..."}` with 404
 
-### Test 4: Telemetry
+### Test 5: Telemetry
 - [ ] Frontend calls `GET /api/dispositivos/00:1B:44:11:3A:B7/telemetria?limite=50`
 - [ ] Backend returns array of telemetry objects in DESC order
 - [ ] Each object has `mac_dispositivo`, `timestamp`, `voltaje`, `corriente`, `potencia`
 
-### Test 5: Toggle Relay
+### Test 6: Toggle Relay
 - [ ] Frontend calls `POST /api/dispositivos/00:1B:44:11:3A:B7/comando/estado` with `{"encendido": true}`
 - [ ] Backend validates JWT, checks device permissions, updates relay state, publishes MQTT
 - [ ] Backend returns 200/204
 
-### Test 6: Set Limits
+### Test 7: Set Limits
 - [ ] Frontend calls `POST /api/dispositivos/00:1B:44:11:3A:B7/comando/limites` with `{"limite_voltaje": 14.0}`
 - [ ] Backend validates input (bounds: V 0.1-60, A 0.1-30, W 0.1-500)
 - [ ] Backend returns 200 on success, 422 with `{"error": "validation_error", "message": "..."}` on invalid input
 
-### Test 7: Token Expiry + Refresh
+### Test 8: Token Expiry + Refresh
 - [ ] Wait 15 minutes for access token to expire
 - [ ] Frontend makes API call → backend returns 401
 - [ ] Frontend automatically refreshes token via Auth0
 - [ ] Frontend retries original API call with new token → succeeds
 
-### Test 8: Logout
+### Test 9: Logout
 - [ ] User taps "Cerrar Sesión" in Settings
 - [ ] Frontend clears SecureStore and AsyncStorage
 - [ ] Frontend shows LoginScreen
 - [ ] Subsequent API calls fail with 401 (no token)
 
-### Test 9: Factory Reset
+### Test 10: Factory Reset
 - [ ] User taps "Restablecer Aplicación a Valores de Fábrica"
 - [ ] Frontend clears ALL local data (logs, preferences, user name)
 - [ ] Frontend calls logout → tokens cleared
@@ -430,5 +436,6 @@ Key files on frontend:
 - `src/types/api.ts` — TypeScript request/response shapes
 - `app/_layout.tsx` — auth guard
 
-**Last updated**: 2026-05-13
+**Last updated**: 2026-05-14
 **Frontend status**: Phase 2 Complete, type-check clean, lint clean
+**See also**: `CORRECTIONS.md` — device pairing scope, backend-only endpoints, `wss://` requirement

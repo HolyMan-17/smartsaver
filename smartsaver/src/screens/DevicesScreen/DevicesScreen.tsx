@@ -18,9 +18,7 @@ interface DeviceNode {
 
 // Fallback device registry — used only when API is unavailable
 export const DEVICE_REGISTRY = [
-  { id: 'node_c3_01', name: 'Router Principal (12V)', mac: '00:1B:44:11:3A:B7' },
-  { id: 'node_c3_02', name: 'Cámara de Seguridad',   mac: '00:1B:44:11:3A:B8' },
-  { id: 'node_c3_03', name: 'Ventilador',              mac: '00:1B:44:11:3A:B9' },
+  { id: 'node_c3_01', name: 'Simulador Activo', mac: '00:1B:44:11:3A:B7' },
 ];
 
 const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
@@ -32,14 +30,34 @@ const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
 export const DevicesScreen = () => {
   const [devices, setDevices] = useState<DeviceNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const hasAttemptedClaim = React.useRef(false);
 
   const fetchDevices = async () => {
     const results: DeviceNode[] = [];
 
     try {
-      const apiDevices: DispositivoResponse[] = await apiClient.getDevices();
+      const apiDevices = await apiClient.getDevices();
 
-      if (apiDevices && apiDevices.length > 0) {
+      // Only attempt to auto-claim once per app session to avoid spamming 403s
+      if (apiDevices !== null) {
+        if (apiDevices.length === 0 && !hasAttemptedClaim.current) {
+          hasAttemptedClaim.current = true;
+          // Auto-claim default simulation devices for this new user
+          let claimedAny = false;
+          for (const reg of DEVICE_REGISTRY) {
+            const registered = await apiClient.registerDevice(reg.mac);
+            if (registered) claimedAny = true;
+          }
+          if (claimedAny) {
+            // Re-fetch now that we have permissions
+            const newDevices = await apiClient.getDevices();
+            if (newDevices && newDevices.length > 0) {
+              apiDevices.push(...newDevices);
+            }
+          }
+        }
+
+        // Fetch telemetry for all devices we have access to
         for (const device of apiDevices) {
           try {
             const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(device.mac, 1);
@@ -65,6 +83,7 @@ export const DevicesScreen = () => {
             });
           }
         }
+        
         setDevices(results);
         setIsLoading(false);
         return;
