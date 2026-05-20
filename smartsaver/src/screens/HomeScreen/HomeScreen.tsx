@@ -8,7 +8,6 @@ import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useUserStore } from '../../store/useUserStore';
 import { apiClient } from '../../services/apiClient';
 import { DEVICE_REGISTRY } from '../DevicesScreen/DevicesScreen';
-import { DispositivoResponse } from '../../types/api';
 
 export const HomeScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
@@ -17,6 +16,7 @@ export const HomeScreen = () => {
   const styles = getStyles(colors);
 
   const [onlineNodes, setOnlineNodes] = useState(0);
+  const [firstDeviceMac, setFirstDeviceMac] = useState<string | null>(null);
 
   const fetchOnlineNodes = async () => {
     try {
@@ -25,6 +25,9 @@ export const HomeScreen = () => {
         // API succeeded. Use its response, even if empty.
         const activeCount = apiDevices.filter((d) => d.is_online).length;
         setOnlineNodes(activeCount);
+        if (apiDevices.length > 0) {
+          setFirstDeviceMac(apiDevices[0].mac);
+        }
         return;
       }
     } catch {
@@ -38,6 +41,9 @@ export const HomeScreen = () => {
       );
       const activeCount = results.filter((res) => res?.is_online).length;
       setOnlineNodes(activeCount);
+      if (results.length > 0 && results[0]) {
+        setFirstDeviceMac(results[0].mac);
+      }
     } catch {
       // Both API and fallback failed — keep last known value
     }
@@ -96,7 +102,7 @@ export const HomeScreen = () => {
 
           <TouchableOpacity
             style={styles.quickLinkCard}
-            onPress={() => router.push('/analytics')}
+            onPress={() => router.push({ pathname: '/analytics', params: { mac: firstDeviceMac || '' } })}
           >
             <View style={[styles.iconContainer, { backgroundColor: isDark ? '#4c1d95' : '#F5F3FF', shadowColor: '#8B5CF6' }]}>
               <Feather name="pie-chart" size={26} color="#8B5CF6" />

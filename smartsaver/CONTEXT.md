@@ -11,6 +11,7 @@
 | Zona | TinyML battery health classification: Safe, Warning, Critical |
 | Límite | Safety threshold for voltaje, corriente, or potencia |
 | Permisos | Access control linking a user to an artefacto |
+| Agregados | Time-bucketed telemetry aggregates (avg power, max power, energy Wh) |
 
 ## Key Relationships
 
@@ -24,8 +25,25 @@
 
 - All API types use Spanish naming (mac_dispositivo, encendido, etc.) — matches FastAPI backend
 - WebSocket service is currently disabled; telemetry uses 5-second HTTP polling
-- Device registry is hardcoded (DEVICE_REGISTRY) — migrating to authenticated API
+- Device list comes from `GET /api/dispositivos` with hardcoded fallback (DEVICE_REGISTRY with 1 device)
 - Auth tokens stored in expo-secure-store, never AsyncStorage
+- Analytics screen uses aggregated telemetry (`GET /api/dispositivos/{mac}/agregados`) for energy/kWh data and raw telemetry as fallback
+
+## Frontend API Endpoints Used
+
+| Endpoint | Screen(s) |
+|----------|-----------|
+| `GET /api/dispositivos` | HomeScreen, DevicesScreen, AnalyticsScreen |
+| `GET /api/dispositivos/{mac}` | DeviceDetailScreen |
+| `PATCH /api/dispositivos/{mac}` | DevicesScreen (name edit), DeviceDetailScreen (name edit) |
+| `DELETE /api/dispositivos/{mac}` | Future (settings) |
+| `GET /api/dispositivos/{mac}/telemetria` | DeviceDetailScreen, AnalyticsScreen |
+| `GET /api/dispositivos/{mac}/agregados` | AnalyticsScreen |
+| `POST /api/dispositivos/{mac}/comando/estado` | DeviceDetailScreen |
+| `POST /api/dispositivos/{mac}/comando/limites` | DeviceDetailScreen |
+| `GET /api/alertas` | Future (AlertsScreen) |
+| `PATCH /api/alertas/{id}` | Future (AlertsScreen) |
+| `GET /api/eventos` | Future (LogsScreen) |
 
 ## External Systems
 

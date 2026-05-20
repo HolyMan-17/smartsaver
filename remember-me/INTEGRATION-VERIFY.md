@@ -1,12 +1,12 @@
 # Frontend-Backend Integration Verification Spec
 
-*This document is a two-sided contract. The frontend has been implemented per the decisions in PLAN.md. The backend agent should verify their implementation against every row in this document. If anything does not match, flag it immediately before integration testing.*
+*Single-source-of-truth contract between frontend and backend. If anything here doesn't match the backend implementation, flag it before integration testing.*
 
 > **⚠️ MUST READ FIRST:** `CORRECTIONS.md` — Device pairing is hardware-only. App never registers or claims devices.
 
 ---
 
-## 1. Environment Variables (Both Sides)
+## 1. Environment Variables
 
 ### Frontend (`smartsaver/.env`)
 
@@ -27,11 +27,9 @@ AUTH0_JWKS_URI=https://thesisbroker.us.auth0.com/.well-known/jwks.json
 BACKEND_SYNC_SECRET=<shared-secret-from-auth0-action>
 ```
 
-**Verification**: If the backend `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, or `BACKEND_SYNC_SECRET` do not match these exact values, Auth0 token validation will fail.
-
 ---
 
-## 2. Auth0 Configuration (Already Set Up)
+## 2. Auth0 Configuration
 
 | Setting | Value | Verified |
 |---------|-------|----------|
@@ -44,41 +42,67 @@ BACKEND_SYNC_SECRET=<shared-secret-from-auth0-action>
 | Refresh Token Rotation | Auto-enabled (single-use) | ✅ |
 | Callback URLs | `smartsaver://callback`, `exp://127.0.0.1:8081` | ✅ |
 | Logout URL | `smartsaver://callback` | ✅ |
-| Scopes requested by app | `openid profile email offline_access read:devices write:devices read:logs` | ✅ |
-
-**Backend note**: The app requests `read:devices write:devices read:logs`. For now (single-user), all scopes are granted to every authenticated user. The backend does not need to enforce scope-based authorization yet, but the `scope` claim must be present in the JWT.
+| Scopes | `openid profile email offline_access read:devices write:devices read:logs` | ✅ |
 
 ---
 
-## 3. API Contract Matrix
+## 3. API Endpoint Matrix
 
-The frontend calls **exactly these endpoints** in **exactly this way**. Any deviation on the backend will cause the frontend to fail.
+All authenticated endpoints require `Authorization: Bearer <access_token>`.
 
-### 3.1 Health Check (Unauthenticated)
+### Auth0 Webhook (Shared Secret, No JWT)
 
-```
-GET {API_BASE_URL}/health
-```
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/users/sync` | Create/update user in DB after Auth0 login |
 
-- **No `Authorization` header**
-- **Expected 200**: any JSON body (frontend just checks `res.ok`)
+### Public (No Auth)
 
-### 3.2 List User's Devices
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness probe |
 
-```
-GET {API_BASE_URL}/api/dispositivos
-Authorization: Bearer <access_token>
-```
+### Authenticated (JWT Bearer)
 
-**Expected 200 Response** (array, must not be wrapped in an object):
+| Method | Path | Frontend Calls | Purpose |
+|--------|------|---------------|---------|
+| `GET` | `/api/dispositivos` | ✅ DevicesScreen, HomeScreen, AnalyticsScreen | List user's devices |
+| `GET` | `/api/dispositivos/{mac}` | ✅ DeviceDetailScreen, AnalyticsScreen | Get device detail |
+| `PATCH` | `/api/dispositivos/{mac}` | ✅ DevicesScreen, DeviceDetailScreen | Update `nombre_personalizado` |
+| `DELETE` | `/api/dispositivos/{mac}` | ✅ (settings, future) | Remove device from user's list |
+| `GET` | `/api/dispositivos/{mac}/telemetria` | ✅ DeviceDetailScreen, AnalyticsScreen | Telemetry history |
+| `GET` | `/api/dispositivos/{mac}/agregados` | ✅ AnalyticsScreen | Aggregated telemetry (hourly/daily) |
+| `POST` | `/api/dispositivos/{mac}/comando/estado` | ✅ DeviceDetailScreen | Toggle relay |
+| `POST` | `/api/dispositivos/{mac}/comando/limites` | ✅ DeviceDetailScreen | Set safety limits |
+| `GET` | `/api/alertas` | ✅ (future: AlertsScreen) | List alerts |
+| `PATCH` | `/api/alertas/{id}` | ✅ (future: AlertsScreen) | Resolve alert |
+| `GET` | `/api/eventos` | ✅ (future: LogsScreen) | List events |
+| `WS` | `/ws/telemetry?token=<jwt>` | ❌ Currently disabled | Real-time telemetry |
+
+### NOT Called by the App
+
+| Method | Path | Why Not |
+|--------|------|---------|
+| `POST` | `/api/dispositivos` | Device registration is hardware-only |
+| `POST` | `/api/telemetria` | M2M only (ESP32 → backend) |
+
+---
+
+## 4. Response Schemas
+
+### Device List (GET /api/dispositivos)
+
 ```json
 [
   {
     "id": 1,
     "mac": "00:1B:44:11:3A:B7",
     "nombre_personalizado": "Kitchen Light",
-    "nivel_prioridad": "alta",
+    "nivel_prioridad": "media",
     "limite_consumo_w": 150.00,
+    "limite_voltaje": null,
+    "limite_corriente": null,
+    "limite_potencia": null,
     "is_online": true,
     "is_encendido": false,
     "nivel_acceso": "ADMIN",
@@ -87,49 +111,12 @@ Authorization: Bearer <access_token>
 ]
 ```
 
-**Frontend behavior**:
-- If response is empty array `[]` or HTTP error, frontend falls back to hardcoded `DEVICE_REGISTRY` (3 devices)
-- The frontend polls this every 5 seconds on `DevicesScreen` and `HomeScreen`
+### Device Detail (GET /api/dispositivos/{mac})
 
-### 3.3 Device Detail
+Same shape as a single list item. 404 returns `{"error": "not_found", "message": "...", "mac": "..."}`.
 
-```
-GET {API_BASE_URL}/api/dispositivos/{mac}
-Authorization: Bearer <access_token>
-```
+### Telemetry History (GET /api/dispositivos/{mac}/telemetria?limite=50)
 
-**Expected 200 Response**:
-```json
-{
-  "id": 1,
-  "mac": "00:1B:44:11:3A:B7",
-  "nombre_personalizado": "Kitchen Light",
-  "nivel_prioridad": "alta",
-  "limite_consumo_w": 150.00,
-  "is_online": true,
-  "is_encendido": false,
-  "nivel_acceso": "ADMIN",
-  "last_seen_at": "2026-05-12T14:30:00Z"
-}
-```
-
-**Expected 404 Response** (structured JSON, NOT FastAPI default `{"detail": "..."}`):
-```json
-{
-  "error": "not_found",
-  "message": "Dispositivo no encontrado",
-  "mac": "00:1B:44:11:3A:B7"
-}
-```
-
-### 3.4 Telemetry History
-
-```
-GET {API_BASE_URL}/api/dispositivos/{mac}/telemetria?limite=50
-Authorization: Bearer <access_token>
-```
-
-**Expected 200 Response** (array, DESC order — newest first):
 ```json
 [
   {
@@ -145,297 +132,217 @@ Authorization: Bearer <access_token>
 ]
 ```
 
-**Critical**: The frontend expects `mac_dispositivo` (not `mac`) in the telemetry response. The `timestamp` field must be ISO 8601. The array must be in DESC order (newest first) because `AnalyticsScreen` uses `history[0]` as the latest reading.
+Array is DESC order (newest first). Frontend uses `history[0]` for latest reading.
 
-### 3.5 Toggle Device State (Relay)
+### Telemetry Aggregates (GET /api/dispositivos/{mac}/agregados?granularity=hour&desde=...)
 
-```
-POST {API_BASE_URL}/api/dispositivos/{mac}/comando/estado
-Authorization: Bearer <access_token>
-Content-Type: application/json
-
-{"encendido": true}
-```
-
-**Request body**: ONLY `{"encendido": <boolean>}`. No `mac_dispositivo` field.
-
-**Expected 200/204**: Frontend checks `res.ok`. No response body parsing.
-
-### 3.6 Set Safety Limits
-
-```
-POST {API_BASE_URL}/api/dispositivos/{mac}/comando/limites
-Authorization: Bearer <access_token>
-Content-Type: application/json
-
-{"limite_voltaje": 14.0, "limite_corriente": 2.0}
-```
-
-**Request body**: Only these fields, all optional:
 ```json
-{
-  "limite_voltaje": number | null,
-  "limite_corriente": number | null,
-  "limite_potencia": number | null
-}
+[
+  {
+    "bucket": "2026-05-12T14:00:00",
+    "potencia_promedio_w": 18.5,
+    "potencia_maxima_w": 24.2,
+    "energia_wh": 12.3
+  }
+]
 ```
 
-**No `mac_dispositivo` in body** — MAC is in URL path.
+`granularity` is `hour` or `day`. `desde` and `hasta` are optional ISO 8601 timestamps.
 
-**Frontend pre-validation** (client-side, before sending):
-- `limite_voltaje`: if present, must be ≥ 0.1 and ≤ 60
-- `limite_corriente`: if present, must be ≥ 0.1 and ≤ 30
-- `limite_potencia`: if present, must be ≥ 0.1 and ≤ 500
-- Reject `NaN`, `Infinity`, negative values
+### Alerts (GET /api/alertas?solo_activas=true)
 
-**Backend must validate with same or stricter bounds** and return:
 ```json
-{"error": "validation_error", "message": "..."}
+[
+  {
+    "id": 1,
+    "id_artefacto": 1,
+    "tipo_alerta": "over_voltage",
+    "mensaje": "Voltaje excedió el límite",
+    "severidad": "warning",
+    "leido": false,
+    "resuelto": false,
+    "timestamp": "2026-05-12T14:30:00Z"
+  }
+]
 ```
-with HTTP 422.
+
+### Events (GET /api/eventos?mac=&limite=50)
+
+```json
+[
+  {
+    "id": 1,
+    "id_artefacto": 1,
+    "id_usuario": 1,
+    "accion": "relay_toggle",
+    "razon_disparo": "user_command",
+    "timestamp": "2026-05-12T14:30:00Z"
+  }
+]
+```
+
+### Error Response (All Endpoints)
+
+```json
+{"error": "<code>", "message": "Human-readable Spanish message"}
+```
+
+| `error` | HTTP | Frontend Behavior |
+|---------|------|-------------------|
+| `unauthorized` | 401 | Token refresh + retry once. If refresh fails, force logout. |
+| `forbidden` | 403 | Alert "Dispositivo no autorizado". No retry. |
+| `not_found` | 404 | Alert with message. Fall back to cached/hardcoded data. |
+| `validation_error` | 422 | Alert with message. Keep modal open for correction. |
 
 ---
 
-## 4. Error Response Format (Strict)
+## 5. Device Update (PATCH /api/dispositivos/{mac})
 
-Every error response from the backend must use this exact shape. The frontend does NOT parse FastAPI default `{"detail": "..."}`.
+The app calls this endpoint to update `nombre_personalizado` (custom device name). other fields are available but not currently used in the UI.
 
+**Request body** (partial update — only send fields you want to change):
 ```json
-{
-  "error": "<code>",
-  "message": "Human-readable Spanish message",
-  "mac": "00:1B:44:11:3A:B7"   // optional, include when relevant
-}
+{"nombre_personalizado": "Kitchen Light"}
 ```
 
-| `error` code | HTTP | Frontend Behavior |
-|---|---|---|
-| `unauthorized` | 401 | Triggers token refresh + retry once. If refresh fails, forces logout. |
-| `forbidden` | 403 | Shows alert "Dispositivo no autorizado". Does NOT retry. |
-| `not_found` | 404 | Shows alert with `message`. Falls back to cached/hardcoded data. |
-| `validation_error` | 422 | Shows alert with `message`. Keeps modal open for correction. |
+**To clear a name**, send `null`:
+```json
+{"nombre_personalizado": null}
+```
+
+**Frontend pre-validation:**
+- `nombre_personalizado`: trimmed, non-empty after trim. Empty string rejected client-side.
+- If the user clears the name field, frontend sends `null` (not empty string).
 
 ---
 
-## 5. Authentication Flow Verification
-
-### 5.1 Login Flow (PKCE)
-
-```
-1. User taps "Iniciar Sesión"
-2. Frontend opens browser to:
-   https://thesisbroker.us.auth0.com/authorize?
-     response_type=code
-     &client_id=iCnC8XXZHeaCNdsEULmtIYD5YL01QdDU
-     &redirect_uri=smartsaver%3A%2F%2Fcallback
-     &audience=https%3A%2F%2Fapi.thesisbroker.com
-     &scope=openid%20profile%20email%20offline_access%20read%3Adevices%20write%3Adevices%20read%3Alogs
-     &code_challenge=<sha256_base64url>
-     &code_challenge_method=S256
-     &state=<random_16_char>
-
-3. Auth0 redirects to: smartsaver://callback?code=xxx&state=yyy
-4. Frontend exchanges code + PKCE verifier for tokens via:
-   POST https://thesisbroker.us.auth0.com/oauth/token
-5. Tokens stored in expo-secure-store
-6. Frontend extracts user profile from ID token claims
-7. App renders (auth guard passes)
-```
-
-**Backend note**: The Auth0 Post-Login Action calls `POST /api/users/sync` with `BACKEND_SYNC_SECRET`. The backend must upsert the user into the `usuarios` table at this point.
-
-### 5.2 Token Refresh
-
-```
-1. Frontend detects token expiry (checks SecureStore timestamp)
-2. Calls POST https://thesisbroker.us.auth0.com/oauth/token
-   with refresh_token grant
-3. Auth0 returns new access_token + refresh_token (rotation)
-4. Frontend stores new tokens, discards old refresh_token
-```
-
-**Backend note**: The backend never sees the refresh token. Only the access token (JWT) is sent to the backend.
-
-### 5.3 API Request with JWT
-
-```
-Every request to /api/* includes:
-Authorization: Bearer <access_token>
-```
-
-**Backend must validate**:
-1. Extract `Authorization: Bearer <token>` header
-2. Validate JWT signature against JWKS from `https://thesisbroker.us.auth0.com/.well-known/jwks.json`
-3. `iss` must equal `https://thesisbroker.us.auth0.com/`
-4. `aud` must equal `https://api.thesisbroker.com`
-5. `exp` must not be in the past
-6. Extract `sub` claim → lookup `usuarios` table by `auth0_id = sub`
-7. If user not found → 403 Forbidden
-8. Inject user into `request.state.user`
-
-### 5.4 Logout Flow
-
-```
-1. Frontend calls Auth0 /v2/logout (browser-based)
-2. Frontend calls Auth0 /oauth/revoke (best-effort token revocation)
-3. Frontend clears SecureStore (access_token, refresh_token, id_token, expiry)
-4. Frontend clears AsyncStorage (user preferences, logs, etc.)
-5. Frontend sets isAuthenticated = false → LoginScreen shown
-```
-
-**Backend note**: Logout does NOT call any backend endpoint. The backend should rely on token expiry + JWT validation. If you maintain a session store, the app cannot invalidate it remotely.
-
----
-
-## 6. WebSocket Contract (When Enabled)
-
-**Current status**: WebSocket is **disabled** in the app. `useTelemetryStore` uses mock data + 5s HTTP polling instead.
+## 6. WebSocket Contract (Disabled — For Future Reference)
 
 When enabled, the frontend will connect to:
 ```
 wss://api.thesisbroker.com/ws/telemetry?token=<access_token>
 ```
 
-**Backend must**:
-1. Extract `token` query parameter
-2. Validate JWT (same rules as REST middleware)
-3. If invalid/expired → close connection with code `4001` and reason `"Unauthorized"`
-4. If valid → accept connection, filter telemetry events to only devices the user has access to via `permisos_usuario_artefacto`
-5. On token expiry during active connection → close with code `4001`
+- JWT as query param (WebSocket handshake cannot carry custom headers)
+- Close code `4001` = authentication failure → stop reconnecting, force re-login
+- Production MUST use `wss://` (TLS). Never send JWT tokens over unencrypted `ws://`
 
-**Frontend behavior on 4001**:
-- Stops reconnecting
-- Forces re-login (shows LoginScreen)
+Test script:
+```javascript
+const ws = new WebSocket('wss://api.thesisbroker.com/ws/telemetry?token=<ACCESS_TOKEN>');
+ws.onopen = () => console.log('Connected');
+ws.onmessage = (e) => console.log(e.data);
+ws.onclose = (e) => console.log('Closed:', e.code, e.reason);
+```
 
 ---
 
-## 7. Frontend Auth Guard State Machine
+## 7. Auth Flow State Machine
 
 ```
 App Launch
   │
-  ├─ isLoading = true → Show ActivityIndicator (splash)
+  ├─ isLoading = true → Show ActivityIndicator
   │
   ├─ rehydrate():
-  │    ├─ No tokens in SecureStore → isAuthenticated = false → LoginScreen
+  │    ├─ No tokens → isAuthenticated = false → LoginScreen
   │    ├─ Token expired → refreshAccessToken()
-  │    │    ├─ Refresh success → isAuthenticated = true
-  │    │    └─ Refresh fails → isAuthenticated = false → LoginScreen
+  │    │    ├─ Success → isAuthenticated = true
+  │    │    └─ Failure → isAuthenticated = false → LoginScreen
   │    └─ Token valid → isAuthenticated = true
   │
   └─ After auth:
-       ├─ onboarding not done → OnboardingScreen (pre-filled with authUser.name)
-       └─ onboarding done → HomeScreen
+       ├─ Onboarding not done → OnboardingScreen (pre-filled with authUser.name)
+       └─ Onboarding done → HomeScreen
 ```
 
-**Critical**: The auth check happens FIRST in `_layout.tsx`. Onboarding is a SECOND gate after auth. The backend does not need to know about onboarding state.
-
 ---
 
-## 8. Data Flow: Device Registry Migration
-
-### Current Behavior (Frontend)
-
-1. `DevicesScreen` mounts → calls `apiClient.getDevices()`
-2. If API returns non-empty array → render those devices
-3. If API fails or returns empty → fall back to `DEVICE_REGISTRY` (3 hardcoded devices)
-4. Polls every 5 seconds
-
-### Target Behavior (Requires Backend)
-
-1. `DevicesScreen` mounts → calls `GET /api/dispositivos`
-2. Backend returns user's actual devices from `permisos_usuario_artefacto` JOIN
-3. Frontend renders real devices
-4. Fallback to hardcoded list only on network failure
-
-**Backend must implement**: `GET /api/dispositivos` (section 3.2) for this to work end-to-end.
-
----
-
-## 9. Integration Test Checklist
-
-Run these steps in order to verify frontend-backend compatibility.
+## 8. Integration Test Checklist
 
 ### Test 1: Auth0 Login + User Sync
-- [ ] User taps "Iniciar Sesión" → Auth0 login page opens
-- [ ] User authenticates → redirect to `smartsaver://callback?code=...`
-- [ ] Frontend exchanges code for tokens (no error)
-- [ ] Auth0 Post-Login Action calls `POST /api/users/sync` → backend returns `{"status": "synced"}`
-- [ ] User appears in `usuarios` table with correct `auth0_id`, `email`, `nombre`
+- [ ] Login opens Auth0 browser → authenticates → redirects to `smartsaver://callback`
+- [ ] Frontend exchanges code for tokens (PKCE)
+- [ ] Auth0 Post-Login Action calls `POST /api/users/sync` → `{"status": "synced"}`
+- [ ] User appears in `usuarios` table
 
-### Test 2: Pre-Seed Device (Backend / Hardware Process)
-**The app does NOT register devices.** You must seed the device and permission rows manually:
-- [ ] `artefactos` row exists for MAC `00:1B:44:11:3A:B7`
-- [ ] `permisos_usuario_artefacto` row links user to device with `nivel_acceso = 'ADMIN'`
+### Test 2: Authenticated API Call
+- [ ] `GET /api/dispositivos` with Bearer token → 200 + device list (or `[]`)
+- [ ] 401 → automatic token refresh + retry
 
-### Test 3: Authenticated API Call
-- [ ] Frontend calls `GET /api/dispositivos` with `Authorization: Bearer <token>`
-- [ ] Backend validates JWT successfully
-- [ ] Backend looks up user by `sub` claim → finds row in `usuarios`
-- [ ] Backend returns user's devices (or empty array if no permissions yet)
+### Test 3: Device Detail
+- [ ] `GET /api/dispositivos/{mac}` → 200 with full device object
+- [ ] 404 → `{"error": "not_found", ...}`
 
-### Test 4: Device Detail
-- [ ] Frontend calls `GET /api/dispositivos/00:1B:44:11:3A:B7`
-- [ ] Backend returns device object with all fields (`id`, `mac`, `nombre_personalizado`, `is_online`, `is_encendido`, etc.)
-- [ ] If device not found → backend returns `{"error": "not_found", "message": "...", "mac": "..."}` with 404
+### Test 4: Device Custom Name
+- [ ] `PATCH /api/dispositivos/{mac}` with `{"nombre_personalizado": "Kitchen Light"}` → 200 + updated device
+- [ ] `PATCH /api/dispositivos/{mac}` with `{"nombre_personalizado": null}` → 200 + name cleared
 
 ### Test 5: Telemetry
-- [ ] Frontend calls `GET /api/dispositivos/00:1B:44:11:3A:B7/telemetria?limite=50`
-- [ ] Backend returns array of telemetry objects in DESC order
+- [ ] `GET /api/dispositivos/{mac}/telemetria?limite=50` → 200 + DESC array
 - [ ] Each object has `mac_dispositivo`, `timestamp`, `voltaje`, `corriente`, `potencia`
 
-### Test 6: Toggle Relay
-- [ ] Frontend calls `POST /api/dispositivos/00:1B:44:11:3A:B7/comando/estado` with `{"encendido": true}`
-- [ ] Backend validates JWT, checks device permissions, updates relay state, publishes MQTT
-- [ ] Backend returns 200/204
+### Test 6: Telemetry Aggregates
+- [ ] `GET /api/dispositivos/{mac}/agregados?granularity=hour&desde=...` → 200 + array
+- [ ] Each object has `bucket`, `potencia_promedio_w`, `potencia_maxima_w`, `energia_wh`
 
-### Test 7: Set Limits
-- [ ] Frontend calls `POST /api/dispositivos/00:1B:44:11:3A:B7/comando/limites` with `{"limite_voltaje": 14.0}`
-- [ ] Backend validates input (bounds: V 0.1-60, A 0.1-30, W 0.1-500)
-- [ ] Backend returns 200 on success, 422 with `{"error": "validation_error", "message": "..."}` on invalid input
+### Test 7: Toggle Relay
+- [ ] `POST /api/dispositivos/{mac}/comando/estado` with `{"encendido": true}` → 200
 
-### Test 8: Token Expiry + Refresh
-- [ ] Wait 15 minutes for access token to expire
-- [ ] Frontend makes API call → backend returns 401
-- [ ] Frontend automatically refreshes token via Auth0
-- [ ] Frontend retries original API call with new token → succeeds
+### Test 8: Set Limits
+- [ ] `POST /api/dispositivos/{mac}/comando/limites` → 200 (valid input)
+- [ ] 422 on invalid bounds (V 0.1-60, A 0.1-30, W 0.1-500)
 
-### Test 9: Logout
-- [ ] User taps "Cerrar Sesión" in Settings
-- [ ] Frontend clears SecureStore and AsyncStorage
-- [ ] Frontend shows LoginScreen
-- [ ] Subsequent API calls fail with 401 (no token)
+### Test 9: Alerts
+- [ ] `GET /api/alertas?solo_activas=true` → 200 + array
+- [ ] `PATCH /api/alertas/{id}` with `{"resuelto": true}` → 200
 
-### Test 10: Factory Reset
-- [ ] User taps "Restablecer Aplicación a Valores de Fábrica"
-- [ ] Frontend clears ALL local data (logs, preferences, user name)
-- [ ] Frontend calls logout → tokens cleared
-- [ ] App returns to LoginScreen
+### Test 10: Events
+- [ ] `GET /api/eventos?mac=&limite=50` → 200 + array
+
+### Test 11: Token Expiry + Refresh
+- [ ] Wait 15 min → API call returns 401 → automatic refresh → retry succeeds
+
+### Test 12: Logout
+- [ ] Clears SecureStore + AsyncStorage → LoginScreen shown
+
+---
+
+## 9. Common Failures & Fixes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| "User not found or inactive" (401) | User in Auth0 but not in backend DB | Ensure Auth0 Action calls `POST /api/users/sync` |
+| "Unable to find signing key" (401) | Auth0 rotated keys, JWKS cache stale | Restart backend or wait 1h for TTL |
+| "Dispositivo no autorizado" (403) | No `permisos_usuario_artefacto` row for this MAC | Seed device + permission in DB |
+| Empty telemetry array | Device has not published data | Run `python -m app.mock_esp32` |
+| MQTT command not reaching device | Mosquitto not running or device not subscribed | Check `systemctl status mosquitto` and device MQTT |
+| MAC format rejected (422) | MAC not in `AA:BB:CC:DD:EE:FF` format | Normalize MAC to uppercase with colons |
 
 ---
 
 ## 10. Known Frontend Issues / TODOs
 
-| Issue | Location | Impact | Fix Needed |
-|-------|----------|--------|------------|
-| `require()` used in `apiClient.ts` for lazy imports | `src/services/apiClient.ts:44,50` | Lint warning only | Refactor to dynamic `import()` if strict ESM needed |
-| React Hook missing dependencies | Multiple screens | Lint warnings | Non-breaking, can fix incrementally |
-| `width` unused in OnboardingScreen | `OnboardingScreen.tsx:10` | Lint warning | Remove unused destructuring |
-| WebSocket disabled | `useTelemetryStore` bypasses WS | No live telemetry | Enable WS when backend `wss://` is ready |
+| Issue | Location | Impact |
+|-------|----------|--------|
+| `require()` in `apiClient.ts` lazy imports | `src/services/apiClient.ts:48,54` | Lint warning only |
+| WebSocket disabled | `useTelemetryStore` uses mock timer | No live telemetry |
+| Alerts/Events screens not yet built | UI only in planning | No user-facing screen yet |
 
 ---
 
-## 11. Contact / Questions
+## 11. Key Frontend Files
 
-If the backend agent finds any mismatch between this document and their implementation, flag it immediately. Do NOT silently change the frontend contract without updating this document.
+| File | Purpose |
+|------|---------|
+| `src/services/apiClient.ts` | All REST calls (`authenticatedFetch`) |
+| `src/services/authService.ts` | Auth0 PKCE flow, token management |
+| `src/services/WebSocketService.ts` | WS contract (disabled) |
+| `src/types/api.ts` | TypeScript request/response shapes |
+| `app/_layout.tsx` | Auth guard + rehydrate |
+| `src/screens/AnalyticsScreen/` | Device selector, aggregated chart, energy cards, pie chart |
+| `src/screens/DeviceDetailScreen/` | Device control + custom name editing |
 
-Key files on frontend:
-- `src/services/apiClient.ts` — all REST calls
-- `src/services/authService.ts` — Auth0 PKCE flow
-- `src/services/WebSocketService.ts` — WS contract (disabled)
-- `src/types/api.ts` — TypeScript request/response shapes
-- `app/_layout.tsx` — auth guard
-
-**Last updated**: 2026-05-14
-**Frontend status**: Phase 2 Complete, type-check clean, lint clean
-**See also**: `CORRECTIONS.md` — device pairing scope, backend-only endpoints, `wss://` requirement
+**Last updated**: 2026-05-20
+**Frontend status**: Analytics overhauled, type-check clean, lint clean (0 errors)
+**See also**: `CORRECTIONS.md` — device pairing scope, `wss://` requirement, PATCH for names

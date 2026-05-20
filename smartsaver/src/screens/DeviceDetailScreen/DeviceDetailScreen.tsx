@@ -42,7 +42,10 @@ export const DeviceDetailScreen = () => {
   const [limCorriente, setLimCorriente] = useState('');
   const [limPotencia, setLimPotencia] = useState('');
   const [savedLimits, setSavedLimits] = useState<{v?: number, c?: number, p?: number}>({});
-  const deviceName = name || 'Dispositivo Conectado';
+  const [deviceName, setDeviceName] = useState(name || 'Dispositivo Conectado');
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
 
   // Refs to avoid stale closures in interval
   const isOnRef = useRef(isOn);
@@ -291,6 +294,51 @@ export const DeviceDetailScreen = () => {
   const zoneColor = getZoneColor(zone);
   const powerButtonDisabled = isSendingCommand || !isOnline;
 
+  const handleSaveName = async () => {
+    if (!mac) return;
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      Alert.alert('Nombre inválido', 'El nombre no puede estar vacío');
+      return;
+    }
+
+    setIsSavingName(true);
+    try {
+      const updated = await apiClient.updateDevice(mac, {
+        nombre_personalizado: trimmed,
+      });
+      if (updated) {
+        setDeviceName(updated.nombre_personalizado || mac);
+        setShowNameModal(false);
+        setEditName('');
+        Alert.alert('Éxito', 'Nombre actualizado correctamente');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo actualizar el nombre');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleClearName = async () => {
+    if (!mac) return;
+    setIsSavingName(true);
+    try {
+      const updated = await apiClient.updateDevice(mac, {
+        nombre_personalizado: null,
+      });
+      if (updated) {
+        setDeviceName(mac);
+        setShowNameModal(false);
+        setEditName('');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo eliminar el nombre');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -311,7 +359,16 @@ export const DeviceDetailScreen = () => {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Panel del Dispositivo</Text>
-          <Text style={styles.headerSubtitle}>{deviceName} ({id})</Text>
+          <TouchableOpacity 
+            onPress={() => {
+              setEditName(deviceName === mac ? '' : deviceName);
+              setShowNameModal(true);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center' }}
+          >
+            <Text style={styles.headerSubtitle}>{deviceName}</Text>
+            <Feather name="edit-2" size={14} color="#64748B" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
         </View>
         {/* ── NETWORK STATUS INDICATOR ── */}
         <View style={localStyles.statusPill}>
@@ -485,6 +542,70 @@ export const DeviceDetailScreen = () => {
                 <Text style={modalStyles.saveButtonText}>Guardar Límites</Text>
               )}
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════ */}
+      {/* ── NAME EDIT MODAL ─────────────────────── */}
+      {/* ═══════════════════════════════════════════ */}
+      <Modal
+        visible={showNameModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => {
+          setShowNameModal(false);
+          setEditName('');
+        }}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.container}>
+            <View style={modalStyles.header}>
+              <Text style={modalStyles.title}>Editar Nombre</Text>
+              <TouchableOpacity onPress={() => {
+                setShowNameModal(false);
+                setEditName('');
+              }}>
+                <Feather name="x" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={modalStyles.subtitle}>
+              {mac}
+            </Text>
+
+            <TextInput
+              style={modalStyles.input}
+              placeholder="Nombre personalizado"
+              placeholderTextColor="#94A3B8"
+              value={editName}
+              onChangeText={setEditName}
+              autoFocus
+              maxLength={50}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              {deviceName !== mac && (
+                <TouchableOpacity 
+                  style={[modalStyles.saveButton, { backgroundColor: '#FEF2F2', flex: 1 }]}
+                  onPress={handleClearName}
+                  disabled={isSavingName}
+                >
+                  <Text style={{ color: '#EF4444', fontWeight: '600' }}>Eliminar</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={[modalStyles.saveButton, { flex: 2 }]}
+                onPress={handleSaveName}
+                disabled={isSavingName}
+              >
+                {isSavingName ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={modalStyles.saveButtonText}>Guardar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

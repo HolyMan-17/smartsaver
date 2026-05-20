@@ -17,10 +17,40 @@ export interface DispositivoResponse {
   nombre_personalizado: string | null;
   nivel_prioridad: string;
   limite_consumo_w: number;
+  limite_voltaje: number | null;
+  limite_corriente: number | null;
+  limite_potencia: number | null;
   is_online: boolean;
   is_encendido: boolean;
   nivel_acceso: string;
   last_seen_at: string | null;
+}
+
+export interface AgregadosResponse {
+  bucket: string;
+  potencia_promedio_w: number;
+  potencia_maxima_w: number;
+  energia_wh: number;
+}
+
+export interface AlertaResponse {
+  id: number;
+  id_artefacto: number;
+  tipo_alerta: string;
+  mensaje: string;
+  severidad: string;
+  leido: boolean;
+  resuelto: boolean;
+  timestamp: string;
+}
+
+export interface EventoResponse {
+  id: number;
+  id_artefacto: number;
+  id_usuario: number;
+  accion: string;
+  razon_disparo: string;
+  timestamp: string;
 }
 
 // ─── Request / Command Schemas ───────────────────────────
@@ -31,6 +61,15 @@ export interface DispositivoEstadoCommand {
 }
 
 export interface DispositivoLimitesCommand {
+  limite_voltaje?: number | null;
+  limite_corriente?: number | null;
+  limite_potencia?: number | null;
+}
+
+export interface DispositivoUpdateCommand {
+  nombre_personalizado?: string | null;
+  nivel_prioridad?: string;
+  limite_consumo_w?: number;
   limite_voltaje?: number | null;
   limite_corriente?: number | null;
   limite_potencia?: number | null;
@@ -55,6 +94,7 @@ export interface ApiErrorResponse {
   error: string;
   message: string;
   mac?: string;
+  field?: string;
 }
 
 /** M2M ingestion payload sent by the ESP32 — not used by the app directly,

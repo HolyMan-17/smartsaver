@@ -2,6 +2,10 @@ import {
   TelemetriaResponse,
   DispositivoResponse,
   DispositivoLimitesCommand,
+  DispositivoUpdateCommand,
+  AgregadosResponse,
+  AlertaResponse,
+  EventoResponse,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -69,9 +73,7 @@ async function getDevices(): Promise<DispositivoResponse[] | null> {
   try {
     const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos`);
     if (!res.ok) return null;
-    const devices: DispositivoResponse[] = await res.json();
-    // Temporary filter to hide the accidentally claimed mock devices
-    return devices.filter(d => !['00:1B:44:11:3A:B8', '00:1B:44:11:3A:B9'].includes(d.mac));
+    return res.json();
   } catch {
     return null;
   }
@@ -95,6 +97,19 @@ export const apiClient = {
   getTelemetryHistory: async (macDispositivo: string, limite: number = 50): Promise<TelemetriaResponse[]> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}/telemetria?limite=${limite}`);
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
+
+  getTelemetryAggregates: async (macDispositivo: string, granularity: 'hour' | 'day' = 'hour', desde?: string, hasta?: string): Promise<AgregadosResponse[]> => {
+    try {
+      const params = new URLSearchParams({ granularity });
+      if (desde) params.append('desde', desde);
+      if (hasta) params.append('hasta', hasta);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}/agregados?${params.toString()}`);
       if (!res.ok) return [];
       return res.json();
     } catch {
@@ -140,11 +155,27 @@ export const apiClient = {
     }
   },
 
-  registerDevice: async (mac: string): Promise<DispositivoResponse | null> => {
+  updateDevice: async (mac: string, updates: DispositivoUpdateCommand): Promise<DispositivoResponse | null> => {
     try {
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos`, {
-        method: 'POST',
-        body: JSON.stringify({ mac }),
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody.message || `HTTP ${res.status}`);
+      }
+      return res.json();
+    } catch (error) {
+      console.error('[API] updateDevice failed:', error);
+      throw error;
+    }
+  },
+
+  deleteDevice: async (mac: string): Promise<{ status: string; mac: string } | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}`, {
+        method: 'DELETE',
       });
       if (!res.ok) return null;
       return res.json();
@@ -154,6 +185,45 @@ export const apiClient = {
   },
 
   getDevices,
+
+  // ─── Alerts ─────────────────────────────────────────────
+
+  getAlerts: async (soloActivas: boolean = true): Promise<AlertaResponse[]> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/alertas?solo_activas=${soloActivas}`);
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
+
+  resolveAlert: async (alertaId: number): Promise<boolean> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/alertas/${alertaId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ resuelto: true }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  // ─── Events ─────────────────────────────────────────────
+
+  getEvents: async (mac?: string, limite: number = 50): Promise<EventoResponse[]> => {
+    try {
+      const params = new URLSearchParams();
+      if (mac) params.append('mac', mac);
+      params.append('limite', String(limite));
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/eventos?${params.toString()}`);
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
 
   // ─── Health (unauthenticated) ───────────────────────────
 

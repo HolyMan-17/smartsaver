@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, SafeAreaView, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { styles } from './DevicesScreen.styles';
 import { apiClient } from '../../services/apiClient';
-import { TelemetriaResponse, DispositivoResponse } from '../../types/api';
+import { TelemetriaResponse } from '../../types/api';
 
 interface DeviceNode {
   id: string;
@@ -30,7 +30,9 @@ const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
 export const DevicesScreen = () => {
   const [devices, setDevices] = useState<DeviceNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const hasAttemptedClaim = React.useRef(false);
+  const [editingDevice, setEditingDevice] = useState<DeviceNode | null>(null);
+  const [editName, setEditName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const fetchDevices = async () => {
     const results: DeviceNode[] = [];
@@ -38,25 +40,7 @@ export const DevicesScreen = () => {
     try {
       const apiDevices = await apiClient.getDevices();
 
-      // Only attempt to auto-claim once per app session to avoid spamming 403s
       if (apiDevices !== null) {
-        if (apiDevices.length === 0 && !hasAttemptedClaim.current) {
-          hasAttemptedClaim.current = true;
-          // Auto-claim default simulation devices for this new user
-          let claimedAny = false;
-          for (const reg of DEVICE_REGISTRY) {
-            const registered = await apiClient.registerDevice(reg.mac);
-            if (registered) claimedAny = true;
-          }
-          if (claimedAny) {
-            // Re-fetch now that we have permissions
-            const newDevices = await apiClient.getDevices();
-            if (newDevices && newDevices.length > 0) {
-              apiDevices.push(...newDevices);
-            }
-          }
-        }
-
         // Fetch telemetry for all devices we have access to
         for (const device of apiDevices) {
           try {
@@ -130,6 +114,62 @@ export const DevicesScreen = () => {
     return () => clearInterval(intervalId);
   }, []);
 
+  const handleSaveName = async () => {
+    if (!editingDevice) return;
+    
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      Alert.alert('Nombre inválido', 'El nombre no puede estar vacío');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const updated = await apiClient.updateDevice(editingDevice.mac, {
+        nombre_personalizado: trimmed,
+      });
+      
+      if (updated) {
+        setDevices(prev => prev.map(d => 
+          d.mac === editingDevice.mac 
+            ? { ...d, name: updated.nombre_personalizado || d.mac }
+            : d
+        ));
+        setEditingDevice(null);
+        setEditName('');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo actualizar el nombre');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClearName = async () => {
+    if (!editingDevice) return;
+    
+    setIsSaving(true);
+    try {
+      const updated = await apiClient.updateDevice(editingDevice.mac, {
+        nombre_personalizado: null,
+      });
+      
+      if (updated) {
+        setDevices(prev => prev.map(d => 
+          d.mac === editingDevice.mac 
+            ? { ...d, name: updated.nombre_personalizado || d.mac }
+            : d
+        ));
+        setEditingDevice(null);
+        setEditName('');
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'No se pudo eliminar el nombre');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const getZoneStyles = (zone: string) => {
     switch (zone) {
       case 'Safe': return { color: '#10B981', bg: '#ECFDF5' };
@@ -146,6 +186,11 @@ export const DevicesScreen = () => {
     });
   };
 
+  const handleLongPress = (device: DeviceNode) => {
+    setEditingDevice(device);
+    setEditName(device.name === device.mac ? '' : device.name);
+  };
+
   const renderItem = ({ item }: { item: DeviceNode }) => {
     const zoneStyle = getZoneStyles(item.zone);
 
@@ -153,7 +198,9 @@ export const DevicesScreen = () => {
       <TouchableOpacity 
         style={styles.deviceCard} 
         onPress={() => handleDevicePress(item)}
+        onLongPress={() => handleLongPress(item)}
         activeOpacity={0.7}
+        delayLongPress={500}
       >
         <View style={[styles.deviceIconContainer, { backgroundColor: zoneStyle.bg }]}>
           <Feather name="cpu" size={24} color={zoneStyle.color} />
@@ -161,6 +208,9 @@ export const DevicesScreen = () => {
         
         <View style={styles.deviceInfo}>
           <Text style={styles.deviceName}>{item.name}</Text>
+          {item.name !== item.mac && (
+            <Text style={styles.deviceMac}>{item.mac}</Text>
+          )}
           <View style={styles.deviceMeta}>
             <View style={[styles.statusDot, { backgroundColor: zoneStyle.color }]} />
             <Text style={[styles.statusText, { color: zoneStyle.color }]}>
@@ -202,6 +252,140 @@ export const DevicesScreen = () => {
           contentContainerStyle={styles.listContainer}
         />
       )}
+
+      {/* Edit Name Modal */}
+      <Modal
+        visible={editingDevice !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setEditingDevice(null);
+          setEditName('');
+        }}
+      >
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.content}>
+            <Text style={modalStyles.title}>Editar Nombre</Text>
+            <Text style={modalStyles.subtitle}>
+              {editingDevice?.mac}
+            </Text>
+            
+            <TextInput
+              style={modalStyles.input}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Nombre personalizado"
+              placeholderTextColor="#94A3B8"
+              autoFocus
+              maxLength={50}
+            />
+            
+            <View style={modalStyles.buttonRow}>
+              <TouchableOpacity 
+                style={[modalStyles.button, modalStyles.cancelButton]}
+                onPress={() => {
+                  setEditingDevice(null);
+                  setEditName('');
+                }}
+              >
+                <Text style={modalStyles.cancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              {editingDevice && editingDevice.name !== editingDevice.mac && (
+                <TouchableOpacity 
+                  style={[modalStyles.button, modalStyles.clearButton]}
+                  onPress={handleClearName}
+                  disabled={isSaving}
+                >
+                  <Text style={modalStyles.clearText}>Eliminar</Text>
+                </TouchableOpacity>
+              )}
+              
+              <TouchableOpacity 
+                style={[modalStyles.button, modalStyles.saveButton, isSaving && modalStyles.disabledButton]}
+                onPress={handleSaveName}
+                disabled={isSaving}
+              >
+                <Text style={modalStyles.saveText}>
+                  {isSaving ? 'Guardando...' : 'Guardar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  content: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#0F172A',
+    marginBottom: 20,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F1F5F9',
+  },
+  clearButton: {
+    backgroundColor: '#FEF2F2',
+  },
+  saveButton: {
+    backgroundColor: '#3B82F6',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  cancelText: {
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  clearText: {
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  saveText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+});

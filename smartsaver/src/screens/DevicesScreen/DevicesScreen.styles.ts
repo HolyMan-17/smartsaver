@@ -57,6 +57,11 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#0F172A',
+    marginBottom: 2,
+  },
+  deviceMac: {
+    fontSize: 12,
+    color: '#94A3B8',
     marginBottom: 4,
   },
   deviceMeta: {

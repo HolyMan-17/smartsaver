@@ -51,7 +51,7 @@ Zustand (v5). Stores live in `src/store/`:
 
 ### Services
 
-- `src/services/apiClient.ts` — REST client (`fetch`-based). Base URL from `EXPO_PUBLIC_API_URL` env var, falls back to `https://api.thesisbroker.com`. Uses `authenticatedFetch()` with Bearer token, AbortController 10s timeout, 401→refresh→retry logic. Wired via `setAccessTokenGetter()` in `_layout.tsx`.
+- `src/services/apiClient.ts` — REST client (`fetch`-based). Base URL from `EXPO_PUBLIC_API_URL` env var, falls back to `https://api.thesisbroker.com`. Uses `authenticatedFetch()` with Bearer token, AbortController 10s timeout, 401→refresh→retry logic. Wired via `setAccessTokenGetter()` in `_layout.tsx`. Endpoints: getDevices, getDeviceDetail, updateDevice, deleteDevice, getTelemetryHistory, getTelemetryAggregates, setDeviceState, setDeviceLimits, getAlerts, resolveAlert, getEvents.
 - `src/services/WebSocketService.ts` — **Currently disabled.** The `useTelemetryStore` bypasses it with `setTimeout` + mock data. When enabled, accepts `tokenGetter` for auth, defaults to `wss://`, passes token as query param, handles 4001 close code.
 
 ### Types
@@ -64,8 +64,9 @@ Zustand (v5). Stores live in `src/store/`:
 
 - **Screen structure**: Each screen has its own folder under `src/screens/` with `.tsx` (logic) and `.styles.ts` (styles). Route files in `app/` just re-export them.
 - **Theming**: Colors come from `getColors(isDark)` in `useThemeStore`, not from `constants/theme.ts` (that file is Expo scaffold, largely unused). Screens call `getStyles(colors)` which returns a StyleSheet.
-- **Polling**: Screens poll the API every 5 seconds via `setInterval`. No WebSocket is active in production yet.
-- **Device registry**: `DEVICE_REGISTRY` in `DevicesScreen.tsx` is **hardcoded** with 3 devices. Screens now try `apiClient.getDevices()` first, falling back to the hardcoded list. Migration to authenticated API endpoint is planned.
+- **Polling**: DeviceDetailScreen and DevicesScreen poll the API every 5 seconds via `setInterval`. AnalyticsScreen fetches on mount, manual refresh, device/time-range change — no polling. No WebSocket is active in production yet.
+- **Device registry**: `DEVICE_REGISTRY` in `DevicesScreen.tsx` is **hardcoded** with 1 fallback device. Screens try `apiClient.getDevices()` first, falling back to the hardcoded list. AnalyticsScreen also fetches all devices for the picker and pie chart.
+- **Analytics**: AnalyticsScreen uses `getTelemetryAggregates(mac, granularity, desde)` for aggregated charts (avg power, peak power, energy kWh) with a time-range selector (24h/7d/30d). Falls back to raw `getTelemetryHistory()` if aggregates return empty. Device picker is a bottom-sheet modal when multiple devices exist. Layout animations enabled for Android via `UIManager.setLayoutAnimationEnabledExperimental(true)`.
 - **Auth flow**: Auth check happens first in `_layout.tsx`. If not authenticated, `LoginScreen` is shown. After auth, onboarding check runs as a second gate.
 
 ## Backend API Spec

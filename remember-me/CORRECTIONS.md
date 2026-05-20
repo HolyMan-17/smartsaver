@@ -7,18 +7,24 @@
 
 ## 1. Device Pairing Is NOT Done Through the App
 
-**The SmartSaver app does NOT register or claim devices.** Device pairing is a **separate hardware process** done directly with the ESP32 (gateway + nodes). This happens outside the app — via physical button press, Wi-Fi provisioning, or manufacturer setup.
+**The SmartSaver app does NOT register devices.** Device pairing is a **separate hardware process** done directly with the ESP32 (gateway + nodes). This happens outside the app — via physical button press, Wi-Fi provisioning, or manufacturer setup.
 
 **What this means for the backend:**
 
 - The app will **never** call `POST /api/dispositivos` (device registration endpoint)
-- The app will **never** call `PATCH /api/dispositivos/{mac}` (device metadata update)
-- The app **only** calls:
+- The app **does** call `PATCH /api/dispositivos/{mac}` — but only for `nombre_personalizado` (custom name). It does NOT use PATCH for device registration or claiming.
+- The app calls these endpoints:
   - `GET /api/dispositivos` — list devices the user has access to
   - `GET /api/dispositivos/{mac}` — get device detail
+  - `PATCH /api/dispositivos/{mac}` — update `nombre_personalizado` (custom name only)
   - `POST /api/dispositivos/{mac}/comando/estado` — toggle relay
   - `POST /api/dispositivos/{mac}/comando/limites` — set safety limits
   - `GET /api/dispositivos/{mac}/telemetria` — fetch telemetry history
+  - `GET /api/dispositivos/{mac}/agregados` — fetch aggregated telemetry
+  - `GET /api/alertas` — list alerts
+  - `PATCH /api/alertas/{id}` — resolve alert
+  - `GET /api/eventos` — list events
+  - `DELETE /api/dispositivos/{mac}` — remove device from user's list
 
 **Backend responsibility:** When a new ESP32 device is paired (hardware process), the backend must:
 1. Create the `artefacto` row in the `artefactos` table (if not exists)
@@ -226,9 +232,10 @@ ws.onclose = (e) => console.log('Closed:', e.code, e.reason);
 | Feature | Why Not | Future |
 |---------|---------|--------|
 | `POST /api/dispositivos` (register device) | Pairing is hardware process | Maybe — if in-app QR scanning added |
-| `PATCH /api/dispositivos/{mac}` (update metadata) | No UI for editing device info | Maybe — rename device in app |
 | Device claiming / QR scan | Out of scope for v1 | Future roadmap |
 | In-app Wi-Fi provisioning | Use ESP32 built-in provisioning | Maybe — if unified flow needed |
+
+**Note:** The app DOES call `PATCH /api/dispositivos/{mac}` — but only for updating `nombre_personalizado` (custom device name). This was added in the 2026-05-20 session.
 
 ---
 
@@ -255,6 +262,5 @@ ws.onclose = (e) => console.log('Closed:', e.code, e.reason);
 
 ---
 
-*Last updated: 2026-05-14*
-*Frontend status: Phase 2 Complete, type-check clean, lint clean*
-*Caveat: Device pairing is hardware-only. App is read-only for device registry.*
+*Last updated: 2026-05-20*
+*Frontend status: Analytics overhauled, type-check clean, lint clean (0 errors)*
