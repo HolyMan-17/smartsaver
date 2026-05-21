@@ -3,9 +3,11 @@ import {
   DispositivoResponse,
   DispositivoLimitesCommand,
   DispositivoUpdateCommand,
+  DispositivoDeleteResponse,
   AgregadosResponse,
   AlertaResponse,
   EventoResponse,
+  ApiErrorResponse,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -43,14 +45,28 @@ async function authenticatedFetch(
       signal: controller.signal,
     });
 
+    if (res.status === 403) {
+      let isUserNotFound = false;
+      try {
+        const body = await res.clone().json();
+        isUserNotFound = body.error === 'forbidden' && /not found|inactive/i.test(body.message ?? '');
+      } catch {
+        // Body unreadable — assume device access denied, not user-not-found
+      }
+      if (isUserNotFound) {
+        const { useAuthStore } = require('../store/useAuthStore');
+        useAuthStore.getState().logout();
+        throw new Error('Usuario no encontrado. Inicia sesión nuevamente.');
+      }
+      throw new Error('Acceso denegado al recurso.');
+    }
+
     if (res.status === 401 && retryOn401 && getAccessTokenFn) {
-      // Token may be expired — refresh and retry once
       const { refreshAccessToken } = require('./authService');
       const newTokens = await refreshAccessToken();
       if (newTokens) {
         return authenticatedFetch(url, options, false);
       }
-      // Refresh failed — force logout
       const { useAuthStore } = require('../store/useAuthStore');
       useAuthStore.getState().logout();
       throw new Error('Session expired. Please log in again.');
@@ -64,6 +80,16 @@ async function authenticatedFetch(
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function parseApiError(res: Response): Promise<ApiErrorResponse | null> {
+  try {
+    const body = await res.json();
+    if (body.error && body.message) return body as ApiErrorResponse;
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -162,17 +188,16 @@ export const apiClient = {
         body: JSON.stringify(updates),
       });
       if (!res.ok) {
-        const errorBody = await res.json().catch(() => ({}));
-        throw new Error(errorBody.message || `HTTP ${res.status}`);
+        const apiError = await parseApiError(res);
+        throw new Error(apiError?.message || `HTTP ${res.status}`);
       }
       return res.json();
     } catch (error) {
-      console.error('[API] updateDevice failed:', error);
       throw error;
     }
   },
 
-  deleteDevice: async (mac: string): Promise<{ status: string; mac: string } | null> => {
+  deleteDevice: async (mac: string): Promise<DispositivoDeleteResponse | null> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}`, {
         method: 'DELETE',

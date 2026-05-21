@@ -1,6 +1,6 @@
-import { IoTGatewayPayload } from '../types/telemetry';
+import { WSMessage } from '../types/telemetry';
 
-type MessageCallback = (data: IoTGatewayPayload) => void;
+type MessageCallback = (data: WSMessage) => void;
 type StatusCallback = (isConnected: boolean) => void;
 type TokenGetter = () => Promise<string | null>;
 
@@ -50,7 +50,7 @@ class WebSocketService {
 
     this.ws.onmessage = (event) => {
       try {
-        const data: IoTGatewayPayload = JSON.parse(event.data);
+        const data: WSMessage = JSON.parse(event.data);
         this.notifyMessageListeners(data);
       } catch {
         // Ignore malformed messages
@@ -65,9 +65,10 @@ class WebSocketService {
       this.notifyStatusListeners(false);
       this.ws = null;
 
-      // Auth failure — don't reconnect, force re-login
       if (event.code === 4001) {
         this.shouldReconnect = false;
+        const { useAuthStore } = require('../store/useAuthStore');
+        useAuthStore.getState().logout();
         return;
       }
 
@@ -103,7 +104,7 @@ class WebSocketService {
     return () => this.statusListeners.delete(callback);
   }
 
-  private notifyMessageListeners(data: IoTGatewayPayload) {
+  private notifyMessageListeners(data: WSMessage) {
     this.messageListeners.forEach((listener) => listener(data));
   }
 

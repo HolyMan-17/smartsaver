@@ -25,6 +25,7 @@ export const DeviceDetailScreen = () => {
   
   const [isOn, setIsOn] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [voltage, setVoltage] = useState(0);
   const [current, setCurrent] = useState(0);
   const [watts, setWatts] = useState(0);
@@ -158,9 +159,10 @@ export const DeviceDetailScreen = () => {
     const newOnline = connectionResult?.is_online ?? false;
     
     // Sync power state from backend
-    if (connectionResult && connectionResult.is_encendido !== undefined) {
-      setIsOn(connectionResult.is_encendido);
-      isOnRef.current = connectionResult.is_encendido;
+    if (connectionResult) {
+      setIsOn(connectionResult.estado_reportado);
+      isOnRef.current = connectionResult.estado_reportado;
+      setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
     }
 
     // ── Log connection state changes ──
@@ -195,6 +197,7 @@ export const DeviceDetailScreen = () => {
 
     if (success) {
       setIsOn(newState);
+      setIsSyncing(true);
       // ── Log power toggle ──
       addLog({
         type: 'USER_ACTION',
@@ -415,7 +418,7 @@ export const DeviceDetailScreen = () => {
             )}
           </TouchableOpacity>
           <Text style={styles.powerStatusText}>
-            {!isOnline ? 'DISPOSITIVO INALCANZABLE' : isSendingCommand ? 'ENVIANDO COMANDO...' : isOn ? 'DISPOSITIVO EN LÍNEA' : 'DISPOSITIVO DESCONECTADO'}
+            {!isOnline ? 'DISPOSITIVO INALCANZABLE' : isSyncing ? 'SINCRONIZANDO...' : isSendingCommand ? 'ENVIANDO COMANDO...' : isOn ? 'DISPOSITIVO EN LÍNEA' : 'DISPOSITIVO DESCONECTADO'}
           </Text>
         </View>
 

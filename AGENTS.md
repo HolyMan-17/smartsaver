@@ -35,7 +35,7 @@ OAuth2.1 + OIDC via Auth0 (PKCE flow). Config in `app.json` `extra` block from `
 - **`app/_layout.tsx`** — Auth guard: rehydrates auth state, shows LoginScreen if !isAuthenticated, wires `setAccessTokenGetter` to apiClient.
 - **Auth flow**: App start → rehydrate from SecureStore → if expired, refresh → if no token, show LoginScreen → PKCE login → store tokens → render app.
 
-Auth0 tenant: `thesisbroker.us.auth0.com`. Audience: `https://api.thesisbroker.com`. Scopes: `openid profile email offline_access`.
+Auth0 tenant: `thesisbroker.us.auth0.com`. Audience: `https://api.thesisbroker.com`. Scopes: `openid profile email offline_access read:devices write:devices read:logs`.
 
 ### State Management
 
@@ -51,14 +51,18 @@ Zustand (v5). Stores live in `src/store/`:
 
 ### Services
 
-- `src/services/apiClient.ts` — REST client (`fetch`-based). Base URL from `EXPO_PUBLIC_API_URL` env var, falls back to `https://api.thesisbroker.com`. Uses `authenticatedFetch()` with Bearer token, AbortController 10s timeout, 401→refresh→retry logic. Wired via `setAccessTokenGetter()` in `_layout.tsx`. Endpoints: getDevices, getDeviceDetail, updateDevice, deleteDevice, getTelemetryHistory, getTelemetryAggregates, setDeviceState, setDeviceLimits, getAlerts, resolveAlert, getEvents.
-- `src/services/WebSocketService.ts` — **Currently disabled.** The `useTelemetryStore` bypasses it with `setTimeout` + mock data. When enabled, accepts `tokenGetter` for auth, defaults to `wss://`, passes token as query param, handles 4001 close code.
+- `src/services/apiClient.ts` — REST client (`fetch`-based). Base URL from `EXPO_PUBLIC_API_URL` env var, falls back to `https://api.thesisbroker.com`. Uses `authenticatedFetch()` with Bearer token, AbortController 10s timeout, 401→refresh→retry logic, 403→force-logout (no retry). Wired via `setAccessTokenGetter()` in `_layout.tsx`. Endpoints: getDevices, getDeviceDetail, updateDevice, deleteDevice, getTelemetryHistory, getTelemetryAggregates, setDeviceState, setDeviceLimits, getAlerts, resolveAlert, getEvents. Errors parsed as `ApiErrorResponse` (`{error, message, ...}`) — never FastAPI `{detail}`.
+- `src/services/WebSocketService.ts` — **Currently disabled.** The `useTelemetryStore` bypasses it with `setTimeout` + mock data. When enabled, accepts `tokenGetter` for auth, defaults to `wss://`, passes token as query param, handles 4001 close code (auth failure → force logout). Message types: `telemetria` (per-device sensor data) and `conexion` (online/offline events).
 
 ### Types
 
 - `src/types/api.ts` — Backend response/request schemas. **Uses Spanish naming** (`mac_dispositivo`, `encendido`, `limite_voltaje`, etc.) matching the FastAPI backend. This is intentional; do not rename to English.
+  - `DispositivoResponse` — device with `limite_voltaje`, `limite_corriente`, `limite_potencia` (nullable), `nombre_personalizado`
+  - `AgregadosResponse` — time-bucketed aggregates: `potencia_promedio_w`, `potencia_maxima_w`, `energia_wh`
+  - `AlertaResponse` / `EventoResponse` — alerts and events (future screens)
+  - `DispositivoUpdateCommand` — PATCH body for `nombre_personalizado` and limits
 - `src/types/auth.ts` — AuthTokens, AuthUser, AuthState interfaces for OAuth2.1 PKCE flow.
-- `src/types/telemetry.ts` — Frontend WebSocket payload types (English naming).
+- `src/types/telemetry.ts` — Frontend WebSocket payload types. `WSMessage` = `WSTelemetriaMessage | WSConexionMessage`. Legacy `IoTGatewayPayload` kept for backward compat.
 
 ## Key Patterns
 
@@ -75,7 +79,8 @@ Full documentation is at the repo root: `api_spec.md` and `remember-me/BACKEND-S
 - Endpoints use RESTful resource paths: `POST /api/dispositivos/{mac}/comando/estado` (MAC in URL, not body).
 - All endpoints Spanish-named. `mac_dispositivo` is the primary device identifier (17-char MAC string).
 - Known backend bug: the `conexion` handler writes to `is_encendido` instead of `is_online`.
-- `POST /api/dispositivos/{mac}/comando/estado` toggles physical relay state + publishes MQTT command.
+- **V5.0 BREAKING:** `is_encendido` removed from `DispositivoResponse`. Use `estado_reportado` (actual relay state) and `estado_deseado` (pending command). When they differ, show "syncing" spinner.
+- `POST /api/dispositivos/{mac}/comando/estado` toggles physical relay state + publishes MQTT command + activates 5min user lease.
 - `POST /api/dispositivos/{mac}/comando/limites` pushes operational safety limits to the device via MQTT.
 - Error responses use structured JSON: `{"error": "not_found", "message": "...", "mac": "..."}`.
 
@@ -92,7 +97,7 @@ The `.gitignore` excludes `.env*` (broadened from `.env*.local`).
 
 ## Security Status
 
-- **Authentication: Implemented.** OAuth2.1 + OIDC via Auth0 (PKCE flow). Tokens stored in SecureStore. API calls use Bearer token via `authenticatedFetch()` with 401→refresh→retry.
+- **Authentication: Implemented.** OAuth2.1 + OIDC via Auth0 (PKCE flow). Tokens stored in SecureStore. API calls use Bearer token via `authenticatedFetch()` with 401→refresh→retry. 403 responses trigger force-logout (user not found or no device access).
 - **Input validation: Implemented.** Safety-critical `setDeviceLimits` payloads have runtime bounds enforcement (NaN/negative/Infinity rejected). TypeScript `DispositivoLimites` type enforces shape.
 - **WebSocket: Not yet active.** When enabled, will use `wss://` with token auth. Currently bypassed by mock telemetry timer.
 - **Production console stripping: Configured.** `babel-plugin-transform-remove-console` in production builds.
