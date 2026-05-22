@@ -1,47 +1,91 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 
-export const styles = StyleSheet.create({
+export const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#FFFFFF',
+    paddingTop: 15,
+    paddingBottom: 15,
+    backgroundColor: colors.card,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: colors.borderSoft,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   backButton: {
-    padding: 5,
+    padding: 6,
+    borderRadius: 12,
+    backgroundColor: colors.iconBg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
+    color: colors.text,
+    letterSpacing: 0.3,
   },
-  saveButtonText: {
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSoft,
+  },
+  bottomSaveButton: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  bottomSaveButtonDisabled: {
+    opacity: 0.5,
+  },
+  bottomSaveButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
-    color: '#3B82F6',
+    letterSpacing: 0.5,
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 12,
-    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+    marginTop: 20,
+    paddingLeft: 4,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 20,
     shadowColor: '#64748B',
@@ -50,83 +94,298 @@ export const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
   },
-  
-  // Days Selector
+
+  // Disabled Banner
+  disabledBanner: {
+    flexDirection: 'row',
+    backgroundColor: colors.infoBg,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  disabledIconWrapper: {
+    marginRight: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+    lineHeight: 18,
+  },
+
+  // Conditional accessibility wrapper
+  mainConfigContainer: {
+    width: '100%',
+  },
+  disabledContainer: {
+    opacity: 0.45,
+  },
+
+  // Days Selector Grid
   daysContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   dayCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: colors.iconBg,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
   },
   dayCircleActive: {
     backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   dayText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textSecondary,
   },
   dayTextActive: {
     color: '#FFFFFF',
   },
 
-  // Active toggle
+  // Custom Time Display Cards
+  timeCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  timeCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.borderSoft,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeCardActive: {
+    borderColor: '#3B82F6',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  timeCardLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  timeValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeCardValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.text,
+    marginRight: 6,
+  },
+
+  // Modal Custom Hours Grid Picker
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: colors.card,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 20,
+  },
+
+  // Period Toggle Selector (AM/PM)
+  periodContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.iconBg,
+    borderRadius: 14,
+    padding: 4,
+    width: '100%',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  periodButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  periodButtonActive: {
+    backgroundColor: '#3B82F6',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  periodButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.textSecondary,
+  },
+  periodButtonTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Grid list of hours
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 12,
+    columnGap: 8,
+    marginBottom: 24,
+  },
+  gridItem: {
+    width: '22%',
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: colors.iconBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  gridItemActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  gridItemText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  gridItemTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Footer buttons in Modal
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  btnCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    marginRight: 8,
+  },
+  btnConfirm: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderRadius: 14,
+    backgroundColor: '#3B82F6',
+    marginLeft: 8,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  btnTextCancel: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  btnTextConfirm: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  automationCard: {
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+    width: '100%',
+  },
   toggleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 5,
-    paddingVertical: 5,
   },
   toggleLabel: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.text,
   },
   toggleDesc: {
     fontSize: 13,
-    color: '#64748B',
+    color: colors.textSecondary,
     marginTop: 4,
-    maxWidth: '85%'
+    maxWidth: '85%',
+    lineHeight: 18,
   },
-
-  // Time Picker Row
-  timeRow: {
-    flexDirection: 'column',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  timeLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 10,
-  },
-  pickersWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-  },
-  pickerHour: {
-    flex: 1,
-    height: 50,
-  },
-  pickerPeriod: {
-    flex: 1,
-    height: 50,
-    backgroundColor: '#F1F5F9',
-  }
 });

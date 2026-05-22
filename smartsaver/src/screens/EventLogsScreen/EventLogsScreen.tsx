@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { styles } from './EventLogsScreen.styles';

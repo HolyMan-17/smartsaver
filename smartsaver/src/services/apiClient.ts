@@ -95,9 +95,12 @@ async function parseApiError(res: Response): Promise<ApiErrorResponse | null> {
 
 // ─── GET /api/dispositivos — List user's devices ─────────────
 
-async function getDevices(): Promise<DispositivoResponse[] | null> {
+async function getDevices(prioridad?: 'P1' | 'P2' | 'P3'): Promise<DispositivoResponse[] | null> {
   try {
-    const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos`);
+    const url = prioridad 
+      ? `${API_BASE_URL}/api/dispositivos?prioridad=${prioridad}` 
+      : `${API_BASE_URL}/api/dispositivos`;
+    const res = await authenticatedFetch(url);
     if (!res.ok) return null;
     return res.json();
   } catch {

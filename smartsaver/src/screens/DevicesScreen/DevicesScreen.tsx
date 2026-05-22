@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { styles } from './DevicesScreen.styles';
@@ -33,12 +34,14 @@ export const DevicesScreen = () => {
   const [editingDevice, setEditingDevice] = useState<DeviceNode | null>(null);
   const [editName, setEditName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'P1' | 'P2' | 'P3'>('ALL');
+  const [showFilter, setShowFilter] = useState(false);
 
-  const fetchDevices = async () => {
+  const fetchDevices = async (filter?: 'P1' | 'P2' | 'P3') => {
     const results: DeviceNode[] = [];
 
     try {
-      const apiDevices = await apiClient.getDevices();
+      const apiDevices = await apiClient.getDevices(filter);
 
       if (apiDevices !== null) {
         // Fetch telemetry for all devices we have access to
@@ -109,10 +112,13 @@ export const DevicesScreen = () => {
   };
 
   useEffect(() => {
-    fetchDevices();
-    const intervalId = setInterval(fetchDevices, 5000);
+    const currentFilter = selectedFilter === 'ALL' ? undefined : selectedFilter;
+    fetchDevices(currentFilter);
+    const intervalId = setInterval(() => {
+      fetchDevices(currentFilter);
+    }, 5000);
     return () => clearInterval(intervalId);
-  }, []);
+  }, [selectedFilter]);
 
   const handleSaveName = async () => {
     if (!editingDevice) return;
@@ -230,14 +236,69 @@ export const DevicesScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={{ marginRight: 15, marginBottom: 15 }} onPress={() => router.back()}>
-          <Feather name="arrow-left" size={24} color="#0F172A" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
+            <Feather name="arrow-left" size={24} color="#0F172A" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setShowFilter(!showFilter)} 
+            style={{ 
+              paddingVertical: 6,
+              paddingHorizontal: 12, 
+              borderRadius: 10, 
+              backgroundColor: showFilter ? '#EFF6FF' : '#F1F5F9',
+              borderWidth: 1,
+              borderColor: showFilter ? '#3B82F6' : '#E2E8F0',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6
+            }}
+            activeOpacity={0.7}
+          >
+            <Feather name="filter" size={16} color={showFilter ? '#3B82F6' : '#64748B'} />
+            <Text style={{ fontSize: 13, fontWeight: '700', color: showFilter ? '#3B82F6' : '#64748B' }}>
+              {showFilter ? 'Ocultar Filtros' : 'Filtrar'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.headerTitle}>Dispositivos Activos</Text>
         <Text style={styles.headerSubtitle}>
           Sensores enlazados vía Nodos LoRa (ESP32-C3)
         </Text>
       </View>
+
+      {/* Segment Selector for Priority Filter */}
+      {showFilter && (
+        <View style={localStyles.filterWrapper}>
+          <Text style={localStyles.filterLabel}>Filtrar por Prioridad</Text>
+          <View style={localStyles.filterContainer}>
+            {(['ALL', 'P1', 'P2', 'P3'] as const).map((filterOpt) => {
+              const label = filterOpt === 'ALL' ? 'Todos' : filterOpt;
+              const isSelected = selectedFilter === filterOpt;
+              const activeColor = '#3B82F6';
+              return (
+                <TouchableOpacity
+                  key={filterOpt}
+                  style={[
+                    localStyles.filterButton,
+                    isSelected && { backgroundColor: activeColor, borderColor: activeColor }
+                  ]}
+                  onPress={() => setSelectedFilter(filterOpt)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    localStyles.filterButtonText,
+                    { color: '#3B82F6', fontWeight: filterOpt === 'ALL' ? '600' : '700' },
+                    isSelected && { color: '#FFFFFF', fontWeight: '800' }
+                  ]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {isLoading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -387,5 +448,55 @@ const modalStyles = StyleSheet.create({
   saveText: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+});
+
+const localStyles = StyleSheet.create({
+  filterWrapper: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 4,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  filterButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
   },
 });

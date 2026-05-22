@@ -1,0 +1,41 @@
+\babel@toc {spanish}{}\relax 
+\contentsline {section}{\numberline {1}Introducción y Descripción General}{1}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Arquitectura del Ecosistema}{1}{subsection.1.1}%
+\contentsline {section}{\numberline {2}Autenticación e Inicio de Sesión}{1}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Pasos para el Acceso}{1}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Configuración Inicial del Perfil (Onboarding)}{2}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Cierre de Sesión Seguro}{2}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Dashboard y Panel de Inicio}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Componentes Clave del Dashboard}{3}{subsection.3.1}%
+\contentsline {section}{\numberline {4}Dispositivos Activos (Lista de Equipos)}{4}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Componentes Visuales de la Lista}{5}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Registro de Respaldo (Fallback)}{5}{subsection.4.2}%
+\contentsline {section}{\numberline {5}Panel de Detalle del Dispositivo}{6}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Encabezado Inteligente}{6}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Interruptor Central de Encendido (Relé)}{7}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Evaluación de Seguridad por IA Integrada}{7}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Visualización de Telemetría}{7}{subsection.5.4}%
+\contentsline {section}{\numberline {6}Evaluación de Seguridad por Inteligencia Artificial}{7}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Notificaciones y Registro de Transición de Zona}{8}{subsection.6.1}%
+\contentsline {section}{\numberline {7}Configuración de Umbrales y Límites de Seguridad}{8}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Acceso e Interfaz de Límites}{9}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Ajustes Eléctricos Disponibles}{9}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Métodos de Entrada Intuitivos y Premium}{9}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Medidores Visuales Comparativos en Tiempo Real}{10}{subsection.7.4}%
+\contentsline {subsection}{\numberline {7.5}Guardado Seguro de Parámetros}{10}{subsection.7.5}%
+\contentsline {section}{\numberline {8}Niveles de Prioridad y Configuración de Horarios}{11}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Prioridad del Dispositivo (Corte Inteligente)}{11}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Configuración de Horarios de Operación y Automatización}{12}{subsection.8.2}%
+\contentsline {section}{\numberline {9}Historial y Bitácora de Eventos}{13}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Funcionalidades de la Interfaz de Historial}{14}{subsection.9.1}%
+\contentsline {section}{\numberline {10}Módulo de Analíticas e Históricos Avanzados}{14}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Selector de Rango de Tiempo y Granularidad}{15}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Tarjetas Resumen de Consumo}{15}{subsection.10.2}%
+\contentsline {subsection}{\numberline {10.3}Visualización Gráfica}{16}{subsection.10.3}%
+\contentsline {subsection}{\numberline {10.4}Exportación de Reportes}{17}{subsection.10.4}%
+\contentsline {section}{\numberline {11}Configuración Global y Ajustes de la Aplicación}{18}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Opciones de Configuración Disponibles}{19}{subsection.11.1}%
+\contentsline {section}{\numberline {12}Resolución de Problemas Frecuentes (Troubleshooting)}{20}{section.12}%
+\contentsline {subsection}{\numberline {12.1}El botón de encendido no reacciona}{20}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Al cambiar los límites de seguridad manuales no se guardan}{20}{subsection.12.2}%
+\contentsline {subsection}{\numberline {12.3}El gráfico circular no carga datos}{20}{subsection.12.3}%

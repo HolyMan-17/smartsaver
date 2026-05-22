@@ -7,7 +7,7 @@ export const getStyles = (colors: any) => StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingTop: 60,
+    paddingTop: 10,
     paddingBottom: 40,
   },
   

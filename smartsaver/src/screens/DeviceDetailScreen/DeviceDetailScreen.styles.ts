@@ -7,8 +7,8 @@ export const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
+    paddingTop: 15,
+    paddingBottom: 15,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
@@ -97,8 +97,50 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
+
   // AI Card
   aiCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  aiTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+    marginLeft: 8,
+  },
+  zoneTextContainer: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoneText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  // Automation Toggle Card
+  automationCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
@@ -109,49 +151,24 @@ export const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: '#F1F5F9',
-    alignItems: 'center',
-  },
-  aiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  aiTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B',
-    marginLeft: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  zoneText: {
-    fontSize: 32,
-    fontWeight: '900',
-    marginBottom: 2,
-    letterSpacing: 2,
-  },
-
-  // Schedule Button
-  scheduleButton: {
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
     width: '100%',
-    marginTop: 10,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: 15,
   },
-  scheduleButtonText: {
-    color: '#FFFFFF',
+  toggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleLabel: {
     fontSize: 16,
     fontWeight: '700',
-    marginLeft: 10,
+    color: '#0F172A',
+  },
+  toggleDesc: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 4,
+    maxWidth: '80%',
+    lineHeight: 18,
   }
 });

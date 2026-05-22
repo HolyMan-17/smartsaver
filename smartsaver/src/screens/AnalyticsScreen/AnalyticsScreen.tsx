@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, SafeAreaView, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert, Modal, Pressable, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert, Modal, Pressable, LayoutAnimation, UIManager, Platform, Animated } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { LineChart, PieChart } from 'react-native-gifted-charts';
@@ -15,6 +16,59 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const { width } = Dimensions.get('window');
+
+interface AnimatedLoaderProps {
+  visible: boolean;
+  color: string;
+  text: string;
+}
+
+const AnimatedLoader = ({ visible, color, text }: AnimatedLoaderProps) => {
+  const opacity = React.useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const [shouldRender, setShouldRender] = useState(visible);
+
+  useEffect(() => {
+    if (visible) {
+      setShouldRender(true);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setShouldRender(false);
+      });
+    }
+  }, [visible, opacity]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.75)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 12,
+        zIndex: 10,
+        opacity,
+      }}
+    >
+      <ActivityIndicator size="large" color={color} />
+      <Text style={{ color: '#475569', marginTop: 8, fontSize: 12, fontWeight: '600' }}>{text}</Text>
+    </Animated.View>
+  );
+};
 
 interface PieSlice {
   value: number;
@@ -79,6 +133,19 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   // ─── UI state ───────────────────────────────────────────────
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [isLoading, setIsLoading] = useState(true);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const tabIndex = React.useRef(new Animated.Value(0)).current;
+
+  // Whenever timeRange changes, animate tabIndex!
+  useEffect(() => {
+    const targetIdx = timeRange === '24h' ? 0 : timeRange === '7d' ? 1 : 2;
+    Animated.spring(tabIndex, {
+      toValue: targetIdx,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 8,
+    }).start();
+  }, [timeRange, tabIndex]);
   const [isPieLoading, setIsPieLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
@@ -392,22 +459,49 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
     </View>
   );
 
-  const renderTimeRangeSelector = () => (
-    <View style={styles.timeRangeContainer}>
-      {(['24h', '7d', '30d'] as TimeRange[]).map((range) => (
-        <TouchableOpacity
-          key={range}
-          style={[styles.timeRangeButton, timeRange === range && styles.timeRangeButtonActive]}
-          onPress={() => handleTimeRangeChange(range)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.timeRangeText, timeRange === range && styles.timeRangeTextActive]}>
-            {range === '24h' ? '24h' : range === '7d' ? '7d' : '30d'}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+  const renderTimeRangeSelector = () => {
+    const buttonWidth = containerWidth ? (containerWidth - 8) / 3 : 0;
+    const translateX = tabIndex.interpolate({
+      inputRange: [0, 1, 2],
+      outputRange: [0, buttonWidth, buttonWidth * 2],
+    });
+
+    return (
+      <View
+        style={styles.timeRangeContainer}
+        onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      >
+        {containerWidth > 0 && (
+          <Animated.View
+            style={[
+              styles.timeRangeButtonActive,
+              {
+                position: 'absolute',
+                top: 4,
+                bottom: 4,
+                left: 4,
+                width: buttonWidth,
+                borderRadius: 8,
+                transform: [{ translateX }],
+              },
+            ]}
+          />
+        )}
+        {(['24h', '7d', '30d'] as TimeRange[]).map((range) => (
+          <TouchableOpacity
+            key={range}
+            style={styles.timeRangeButton}
+            onPress={() => handleTimeRangeChange(range)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.timeRangeText, timeRange === range && styles.timeRangeTextActive]}>
+              {range === '24h' ? '24h' : range === '7d' ? '7d' : '30d'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
 
   const renderDevicePickerModal = () => (
     <Modal
@@ -576,14 +670,10 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               {aggregates.length > 0 ? 'Tendencia de Potencia Promedio (W)' : 'Tendencia de Potencia (W)'}
             </Text>
           </View>
-          <View style={{ alignItems: 'center', paddingTop: 10 }}>
-            {isLoading ? (
-              <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color="#3B82F6" />
-                <Text style={{ color: '#94A3B8', marginTop: 10, fontSize: 13 }}>Obteniendo datos...</Text>
-              </View>
-            ) : lineValues.length > 0 ? (
+          <View style={{ alignItems: 'center', paddingTop: 10, position: 'relative', minHeight: 180, justifyContent: 'center' }}>
+            {lineValues.length > 0 ? (
               <LineChart
+                key={`${selectedMac}_${timeRange}`}
                 data={lineValues}
                 width={width - 100}
                 height={180}
@@ -605,13 +695,17 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                 dataPointsColor="#2563EB"
                 dataPointsRadius={3}
                 curved
+                isAnimated
+                animationDuration={400}
               />
-            ) : (
+            ) : !isLoading ? (
               <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
                 <Feather name="inbox" size={32} color="#CBD5E1" />
                 <Text style={{ color: '#94A3B8', marginTop: 10, fontSize: 13 }}>Sin datos disponibles</Text>
               </View>
-            )}
+            ) : <View style={{ height: 180 }} />}
+
+            <AnimatedLoader visible={isLoading} color="#3B82F6" text="Actualizando..." />
           </View>
         </View>
 
@@ -621,33 +715,43 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
             <Feather name="pie-chart" size={20} color="#10B981" />
             <Text style={styles.chartTitle}>Distribución por Nodo</Text>
           </View>
-          <View style={{ alignItems: 'center', paddingTop: 10 }}>
-            {isPieLoading ? (
-              <View style={{ height: 200, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color="#10B981" />
-                <Text style={{ color: '#94A3B8', marginTop: 10, fontSize: 13 }}>Cargando dispositivos...</Text>
-              </View>
-            ) : pieSlices.length > 0 ? (
-              <>
+          <View style={{ alignItems: 'center', paddingTop: 10, position: 'relative', minHeight: 200, justifyContent: 'center' }}>
+            {pieSlices.length > 0 ? (
+              <View style={{ alignItems: 'center', width: '100%' }}>
                 <PieChart
+                  key={`pie_${pieSlices.length}`}
                   data={pieSlices}
                   donut
                   radius={90}
                   innerRadius={55}
-                  showText
-                  textColor="#0F172A"
-                  textSize={10}
                   focusOnPress
                   toggleFocusOnPress
+                  isAnimated
+                  animationDuration={400}
+                  centerLabelComponent={() => {
+                    const totalPower = pieSlices.reduce((acc, slice) => acc + (slice.value <= 0.1 ? 0 : slice.value), 0);
+                    return (
+                      <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
+                          {totalPower.toFixed(1)}W
+                        </Text>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          Total
+                        </Text>
+                      </View>
+                    );
+                  }}
                 />
                 {renderLegend()}
-              </>
-            ) : (
+              </View>
+            ) : !isPieLoading ? (
               <View style={{ height: 200, justifyContent: 'center', alignItems: 'center' }}>
                 <Feather name="inbox" size={32} color="#CBD5E1" />
                 <Text style={{ color: '#94A3B8', marginTop: 10, fontSize: 13 }}>Sin datos de dispositivos</Text>
               </View>
-            )}
+            ) : <View style={{ height: 200 }} />}
+
+            <AnimatedLoader visible={isPieLoading} color="#10B981" text="Actualizando..." />
           </View>
         </View>
 
@@ -658,8 +762,9 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               <Feather name="battery-charging" size={20} color="#F59E0B" />
               <Text style={styles.chartTitle}>Energía por Periodo (Wh)</Text>
             </View>
-            <View style={{ alignItems: 'center', paddingTop: 10 }}>
+            <View style={{ alignItems: 'center', paddingTop: 10, position: 'relative', minHeight: 160, justifyContent: 'center' }}>
               <LineChart
+                key={`${selectedMac}_${timeRange}_energy`}
                 data={aggregates.map((a, i) => ({
                   value: Number((a.energia_wh ?? 0).toFixed(1)),
                   label: i % Math.max(1, Math.floor(aggregates.length / 6)) === 0
@@ -686,7 +791,11 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                 dataPointsColor="#D97706"
                 dataPointsRadius={3}
                 curved
+                isAnimated
+                animationDuration={400}
               />
+
+              <AnimatedLoader visible={isLoading} color="#F59E0B" text="Actualizando..." />
             </View>
           </View>
         )}

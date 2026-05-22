@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, SafeAreaView, ScrollView, TouchableOpacity, Switch, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -8,6 +9,7 @@ import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { CustomSwitch } from '../../../components/ui/CustomSwitch';
 
 export const SettingsScreen = () => {
   // Theme state
@@ -22,13 +24,11 @@ export const SettingsScreen = () => {
   const logout = useAuthStore((s) => s.logout);
   const authUser = useAuthStore((s) => s.user);
 
-  // Mock State for Toggles
+  // State for Toggles
   const [enableAI, setEnableAI] = useState(true);
   const [autoLoadShedding, setAutoLoadShedding] = useState(true);
   const [notifyCritical, setNotifyCritical] = useState(true);
   const [notifyWarnings, setNotifyWarnings] = useState(true);
-
-
 
   const handleClearCache = () => {
     Alert.alert(
@@ -89,7 +89,7 @@ export const SettingsScreen = () => {
       {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Feather name="arrow-left" size={24} color={colors.text} />
+          <Feather name="arrow-left" size={20} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Ajustes</Text>
       </View>
@@ -104,13 +104,17 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.infoBg }]}>
                 <Feather name="user" size={18} color="#3B82F6" />
               </View>
-              <View>
-                <Text style={styles.rowTitle}>{authUser?.email || userName || 'Usuario'}</Text>
-                <Text style={styles.rowSubtitle}>Sesión activa</Text>
+              <View style={styles.textWrapper}>
+                <Text style={styles.rowTitle}>
+                  {authUser?.email || userName || 'Usuario'}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                  <Text style={[styles.rowSubtitle, { marginRight: 8, marginTop: 0 }]}>Sesión activa</Text>
+                  <View style={[styles.badge, { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }]}>
+                    <Text style={[styles.badgeText, { fontSize: 10 }]}>Autenticado</Text>
+                  </View>
+                </View>
               </View>
-            </View>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>Autenticado</Text>
             </View>
           </View>
           <TouchableOpacity style={styles.row} onPress={handleLogout}>
@@ -118,9 +122,11 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.dangerBg }]}>
                 <Feather name="log-out" size={18} color="#EF4444" />
               </View>
-              <Text style={[styles.rowTitle, styles.dangerText]}>Cerrar Sesión</Text>
+              <View style={styles.textWrapper}>
+                <Text style={[styles.rowTitle, styles.dangerText]}>Cerrar Sesión</Text>
+              </View>
             </View>
-            <Feather name="chevron-right" size={20} color={colors.border} />
+            <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -132,18 +138,20 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.infoBg }]}>
                 <Feather name="globe" size={18} color="#3B82F6" />
               </View>
-              <View>
-                <Text style={styles.rowTitle}>Estado del Servidor</Text>
+              <View style={styles.textWrapper}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>Estado del Servidor</Text>
+                  <View style={[styles.badge, { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 6, flexShrink: 0 }]}>
+                    <Text style={[styles.badgeText, { fontSize: 9 }]}>Conectado</Text>
+                  </View>
+                </View>
                 <Text style={styles.rowSubtitle}>api.thesisbroker.com</Text>
               </View>
-            </View>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>Conectado</Text>
             </View>
           </View>
         </View>
 
-        {/* 2. TINYML & AUTOMATION */}
+        {/* 3. TINYML & AUTOMATION */}
         <Text style={styles.sectionTitle}>TinyML y Automatización</Text>
         <View style={styles.card}>
           <View style={styles.row}>
@@ -151,12 +159,17 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.iconBg }]}>
                 <Feather name="cpu" size={18} color="#8B5CF6" />
               </View>
-              <View>
+              <View style={styles.textWrapper}>
                 <Text style={styles.rowTitle}>Control Maestro de IA</Text>
                 <Text style={styles.rowSubtitle}>Permitir que la IA tome decisiones</Text>
               </View>
             </View>
-            <Switch value={enableAI} onValueChange={setEnableAI} trackColor={{ true: '#60A5FA', false: colors.border }} />
+            <CustomSwitch
+              value={enableAI}
+              onValueChange={setEnableAI}
+              activeColor="#3B82F6"
+              inactiveColor={colors.border}
+            />
           </View>
           
           <View style={[styles.row, styles.rowNoBorder]}>
@@ -164,16 +177,26 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.warningBg }]}>
                 <Feather name="zap-off" size={18} color="#F59E0B" />
               </View>
-              <View>
-                <Text style={styles.rowTitle}>Corte de Carga Automático</Text>
-                <Text style={styles.rowSubtitle}>Apagar automáticamente dispositivos P3/P4 en caso de alerta</Text>
+              <View style={styles.textWrapper}>
+                <Text style={[styles.rowTitle, !enableAI && styles.disabledText]}>
+                  Corte de Carga Automático
+                </Text>
+                <Text style={[styles.rowSubtitle, !enableAI && styles.disabledText]}>
+                  Apagar automáticamente dispositivos P3/P4 en caso de alerta
+                </Text>
               </View>
             </View>
-            <Switch value={autoLoadShedding} onValueChange={setAutoLoadShedding} trackColor={{ true: '#60A5FA', false: colors.border }} disabled={!enableAI} />
+            <CustomSwitch
+              value={autoLoadShedding && enableAI}
+              onValueChange={setAutoLoadShedding}
+              disabled={!enableAI}
+              activeColor="#3B82F6"
+              inactiveColor={colors.border}
+            />
           </View>
         </View>
 
-        {/* 3. ALERTS & THRESHOLDS */}
+        {/* 4. ALERTS & NOTIFICATIONS */}
         <Text style={styles.sectionTitle}>Alertas y Notificaciones</Text>
         <View style={styles.card}>
           <View style={styles.row}>
@@ -181,36 +204,39 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.dangerBg }]}>
                 <Feather name="alert-triangle" size={18} color="#EF4444" />
               </View>
-              <Text style={styles.rowTitle}>Alertas de Cortes Críticos</Text>
+              <View style={styles.textWrapper}>
+                <Text style={styles.rowTitle}>Alertas de Cortes Críticos</Text>
+                <Text style={styles.rowSubtitle}>Notificaciones instantáneas de fallos de alimentación</Text>
+              </View>
             </View>
-            <Switch value={notifyCritical} onValueChange={setNotifyCritical} trackColor={{ true: '#60A5FA', false: colors.border }} />
+            <CustomSwitch
+              value={notifyCritical}
+              onValueChange={setNotifyCritical}
+              activeColor="#3B82F6"
+              inactiveColor={colors.border}
+            />
           </View>
-          
-          <TouchableOpacity style={styles.row} onPress={() => router.push({ pathname: '/devices/[id]', params: { id: 'node_c3_01', mac: '00:1B:44:11:3A:B7', name: 'Main Router (12V)' }})}>
-            <View style={styles.rowLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.iconBg }]}>
-                <Feather name="sliders" size={18} color={colors.textSecondary} />
-              </View>
-              <View>
-                <Text style={styles.rowTitle}>Límites de Umbral Personalizados</Text>
-                <Text style={styles.rowSubtitle}>Configura alertas de W máx y V mín por dispositivo</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color={colors.border} />
-          </TouchableOpacity>
 
           <View style={[styles.row, styles.rowNoBorder]}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconContainer, { backgroundColor: colors.warningBg }]}>
                 <Feather name="bell" size={18} color="#F59E0B" />
               </View>
-              <Text style={styles.rowTitle}>Alertas de Advertencia</Text>
+              <View style={styles.textWrapper}>
+                <Text style={styles.rowTitle}>Alertas de Advertencia</Text>
+                <Text style={styles.rowSubtitle}>Notificaciones de niveles bajos de batería y límites superados</Text>
+              </View>
             </View>
-            <Switch value={notifyWarnings} onValueChange={setNotifyWarnings} trackColor={{ true: '#60A5FA', false: colors.border }} />
+            <CustomSwitch
+              value={notifyWarnings}
+              onValueChange={setNotifyWarnings}
+              activeColor="#3B82F6"
+              inactiveColor={colors.border}
+            />
           </View>
         </View>
 
-        {/* 4. DATA & REPORTS */}
+        {/* 5. DATA & REPORTS */}
         <Text style={styles.sectionTitle}>Datos y Reportes</Text>
         <View style={styles.card}>
           <TouchableOpacity style={[styles.row, styles.rowNoBorder]} onPress={handleClearCache}>
@@ -218,12 +244,16 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.dangerBg }]}>
                 <Feather name="trash-2" size={18} color="#EF4444" />
               </View>
-              <Text style={[styles.rowTitle, styles.dangerText]}>Restablecer Aplicación a Valores de Fábrica</Text>
+              <View style={styles.textWrapper}>
+                <Text style={[styles.rowTitle, styles.dangerText]}>Restablecer Aplicación a Valores de Fábrica</Text>
+                <Text style={styles.rowSubtitle}>Borrar caché, registros de eventos y cerrar sesión actual</Text>
+              </View>
             </View>
+            <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
-        {/* 5. SYSTEM & PREFERENCES */}
+        {/* 6. SYSTEM & PREFERENCES */}
         <Text style={styles.sectionTitle}>Sistema y Preferencias</Text>
         <View style={styles.card}>
           <View style={styles.row}>
@@ -231,9 +261,17 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.iconBg }]}>
                 <Feather name="moon" size={18} color={colors.text} />
               </View>
-              <Text style={styles.rowTitle}>Modo Oscuro</Text>
+              <View style={styles.textWrapper}>
+                <Text style={styles.rowTitle}>Modo Oscuro</Text>
+                <Text style={styles.rowSubtitle}>Alternar tema visual de la aplicación</Text>
+              </View>
             </View>
-            <Switch value={isDark} onValueChange={toggleTheme} trackColor={{ true: '#60A5FA', false: colors.border }} />
+            <CustomSwitch
+              value={isDark}
+              onValueChange={toggleTheme}
+              activeColor="#3B82F6"
+              inactiveColor={colors.border}
+            />
           </View>
 
           <TouchableOpacity style={[styles.row, styles.rowNoBorder]} onPress={handleReboot}>
@@ -241,8 +279,12 @@ export const SettingsScreen = () => {
               <View style={[styles.iconContainer, { backgroundColor: colors.dangerBg }]}>
                 <Feather name="refresh-cw" size={18} color="#EF4444" />
               </View>
-              <Text style={[styles.rowTitle, styles.dangerText]}>Reinicio Remoto de Puerta de Enlace</Text>
+              <View style={styles.textWrapper}>
+                <Text style={[styles.rowTitle, styles.dangerText]}>Reinicio Remoto de Puerta de Enlace</Text>
+                <Text style={styles.rowSubtitle}>Enviar señal de reinicio al ESP32 a través de red</Text>
+              </View>
             </View>
+            <Feather name="chevron-right" size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
