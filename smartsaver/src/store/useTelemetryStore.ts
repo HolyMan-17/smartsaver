@@ -37,7 +37,8 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   startConnection: () => {
     if (get().isInitialized) return;
 
-    // Connect real WebSocket service
+    // Connect real WebSocket service (disabled in production until backend WebSocket is active)
+    /*
     wsService.setTokenGetter(async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -49,6 +50,7 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     });
 
     wsService.connect();
+    */
 
     unsubscribeStatus = wsService.subscribeToStatus((status) => {
       set({ isConnected: status });

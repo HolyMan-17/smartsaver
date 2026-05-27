@@ -35,10 +35,14 @@ export const DeviceDetailScreen = () => {
   const [isSendingCommand, setIsSendingCommand] = useState(false);
   const [aiStatus, setAiStatus] = useState<number>(0);
   const [activeBmsAlert, setActiveBmsAlert] = useState<AlertaResponse | null>(null);
+  const [activeBmsAlertsList, setActiveBmsAlertsList] = useState<AlertaResponse[]>([]);
+  const [isResolvingAlert, setIsResolvingAlert] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   // Refs to track previous values for change-detection logging
   const prevOnline = useRef<boolean | null>(null);
   const prevZone = useRef<Zone | null>(null);
+  const prevVoltageState = useRef<'normal' | 'sag' | 'spike'>('normal');
 
   // Limits modal state
   const [showLimitsModal, setShowLimitsModal] = useState(false);
@@ -123,15 +127,16 @@ export const DeviceDetailScreen = () => {
     // Process active alerts for BMS critical state matching this device ID
     let hasActiveBmsAlert = false;
     if (alertsResult) {
-      const bmsAlert = alertsResult.find(
+      const bmsAlerts = alertsResult.filter(
         (a) =>
           String(a.id_artefacto) === String(id) &&
           a.tipo_alerta === 'bms_critica' &&
           !a.resuelto
       );
-      if (bmsAlert) {
+      setActiveBmsAlertsList(bmsAlerts);
+      if (bmsAlerts.length > 0) {
         hasActiveBmsAlert = true;
-        setActiveBmsAlert(bmsAlert);
+        setActiveBmsAlert(bmsAlerts[0]);
       } else {
         setActiveBmsAlert(null);
       }
@@ -146,24 +151,50 @@ export const DeviceDetailScreen = () => {
       setAiStatus(latest.ai_status ?? 0);
 
       const newZone = classifyZone(latest.potencia);
-      // ── Log AI zone transitions ──
+      // ── Log AI zone transitions (no push notifications — informational only) ──
       if (prevZone.current !== null && prevZone.current !== newZone) {
         if (newZone === 'Warning') {
           const msg = `El consumo de energía alcanzó ${latest.potencia.toFixed(1)}W. La zona cambió de ${prevZone.current === 'Safe' ? 'Seguro' : 'Crítico'} a Alerta.`;
           addLog({ type: 'WARNING', title: 'Alto Consumo Detectado', message: msg, device_id: id, device_name: deviceName });
-          sendLocalNotification('⚠️ Alto Consumo Detectado', msg);
         } else if (newZone === 'Critical') {
           const msg = `El consumo de energía se disparó a ${latest.potencia.toFixed(1)}W. La IA marcó el dispositivo como CRÍTICO.`;
           addLog({ type: 'CRITICAL', title: 'Alerta de Energía Crítica', message: msg, device_id: id, device_name: deviceName });
-          sendLocalNotification('🚨 Alerta Crítica (IA)', msg);
         } else if (newZone === 'Safe' && prevZone.current !== 'Safe') {
           const msg = `Los niveles de energía se normalizaron a ${latest.potencia.toFixed(1)}W. El dispositivo volvió a la zona Segura.`;
           addLog({ type: 'AI_ACTION', title: 'Zona Restaurada a Seguro', message: msg, device_id: id, device_name: deviceName });
-          sendLocalNotification('✅ Zona Segura', msg);
         }
       }
       prevZone.current = newZone;
       setZone(newZone);
+
+      // ── Voltage Sag / Spike Detection ("bajones" y picos) ──
+      const NOMINAL_V = 120;
+      const SAG_THRESHOLD = NOMINAL_V * 0.90;   // 108V — 10% sag
+      const SPIKE_THRESHOLD = NOMINAL_V * 1.10;  // 132V — 10% spike
+
+      let voltageState: 'normal' | 'sag' | 'spike' = 'normal';
+      if (latest.voltaje <= SAG_THRESHOLD && latest.voltaje > 0) {
+        voltageState = 'sag';
+      } else if (latest.voltaje >= SPIKE_THRESHOLD) {
+        voltageState = 'spike';
+      }
+
+      if (voltageState !== prevVoltageState.current) {
+        if (voltageState === 'sag') {
+          const msg = `Se detectó un bajón de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
+          addLog({ type: 'WARNING', title: 'Bajón de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
+          sendLocalNotification('⚡ Bajón de Voltaje', msg);
+        } else if (voltageState === 'spike') {
+          const msg = `Se detectó un pico de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
+          addLog({ type: 'CRITICAL', title: 'Pico de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
+          sendLocalNotification('🔺 Pico de Voltaje', msg);
+        } else if (prevVoltageState.current !== 'normal') {
+          const prevLabel = prevVoltageState.current === 'sag' ? 'bajón' : 'pico';
+          const msg = `El voltaje de ${deviceName} se normalizó a ${latest.voltaje.toFixed(1)}V tras un ${prevLabel}.`;
+          addLog({ type: 'AI_ACTION', title: 'Voltaje Normalizado', message: msg, device_id: id, device_name: deviceName });
+        }
+        prevVoltageState.current = voltageState;
+      }
 
       // ── Limit Enforcement ──
       const limits = savedLimitsRef.current;
@@ -214,15 +245,9 @@ export const DeviceDetailScreen = () => {
     
     // Sync power state from backend
     if (connectionResult) {
-      if (hasActiveBmsAlert) {
-        setIsOn(false);
-        isOnRef.current = false;
-        setIsSyncing(false);
-      } else {
-        setIsOn(connectionResult.estado_reportado);
-        isOnRef.current = connectionResult.estado_reportado;
-        setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
-      }
+      setIsOn(connectionResult.estado_reportado);
+      isOnRef.current = connectionResult.estado_reportado;
+      setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
       setPriority(connectionResult.nivel_prioridad);
     }
 
@@ -270,6 +295,23 @@ export const DeviceDetailScreen = () => {
         device_id: id,
         device_name: deviceName,
       });
+
+      // Auto-resolve BMS alerts when user turns the device back ON
+      if (newState && activeBmsAlertsList.length > 0) {
+        Promise.all(activeBmsAlertsList.map(a => apiClient.resolveAlert(a.id))).then((results) => {
+          if (results.every(r => r)) {
+            setActiveBmsAlert(null);
+            setActiveBmsAlertsList([]);
+            addLog({
+              type: 'USER_ACTION',
+              title: 'Alertas BMS Resueltas',
+              message: `Las alertas BMS críticas fueron resueltas automáticamente al encender ${deviceName}.`,
+              device_id: id,
+              device_name: deviceName,
+            });
+          }
+        }).catch(() => { /* silent — next poll will retry */ });
+      }
     } else {
       addLog({ type: 'WARNING', title: 'Comando Fallido', message: `Fallo al encender/apagar ${deviceName}. El servidor no respondió.`, device_id: id, device_name: deviceName });
       Alert.alert('Comando Fallido', 'No se pudo contactar al servidor. El estado del dispositivo no se cambió.');
@@ -277,7 +319,7 @@ export const DeviceDetailScreen = () => {
   };
 
   const LIMIT_BOUNDS: Record<string, { min: number; max: number; label: string; unit: string }> = {
-    voltaje:   { min: 0.1, max: 60,  label: 'Voltaje',   unit: 'V' },
+    voltaje:   { min: 0.1, max: 250, label: 'Voltaje',   unit: 'V' },
     corriente: { min: 0.1, max: 30,  label: 'Corriente', unit: 'A' },
     potencia:  { min: 0.1, max: 500, label: 'Potencia',  unit: 'W' },
   };
@@ -369,10 +411,10 @@ export const DeviceDetailScreen = () => {
 
   const adjustLimit = (type: 'v' | 'c' | 'p', increment: boolean) => {
     if (type === 'v') {
-      const currentVal = parseFloat(limVoltaje) || 12.0;
+      const currentVal = parseFloat(limVoltaje) || 120.0;
       const step = 0.5;
       const newVal = increment ? currentVal + step : currentVal - step;
-      const clamped = Math.max(0.1, Math.min(60, newVal));
+      const clamped = Math.max(0.1, Math.min(250, newVal));
       setLimVoltaje(clamped.toFixed(1));
     } else if (type === 'c') {
       const currentVal = parseFloat(limCorriente) || 2.0;
@@ -395,15 +437,15 @@ export const DeviceDetailScreen = () => {
       setLimCorriente('');
       setLimPotencia('');
     } else if (preset === 'bajo') {
-      setLimVoltaje('12.0');
+      setLimVoltaje('125.0');
       setLimCorriente('2.0');
       setLimPotencia('20.0');
     } else if (preset === 'normal') {
-      setLimVoltaje('14.5');
+      setLimVoltaje('135.0');
       setLimCorriente('5.0');
       setLimPotencia('60.0');
     } else if (preset === 'alto') {
-      setLimVoltaje('28.0');
+      setLimVoltaje('150.0');
       setLimCorriente('10.0');
       setLimPotencia('120.0');
     }
@@ -413,9 +455,9 @@ export const DeviceDetailScreen = () => {
     const v = parseFloat(limVoltaje);
     const c = parseFloat(limCorriente);
     const p = parseFloat(limPotencia);
-    if (v === 12.0 && c === 2.0 && p === 20.0) return 'bajo';
-    if (v === 14.5 && c === 5.0 && p === 60.0) return 'normal';
-    if (v === 28.0 && c === 10.0 && p === 120.0) return 'alto';
+    if (v === 125.0 && c === 2.0 && p === 20.0) return 'bajo';
+    if (v === 135.0 && c === 5.0 && p === 60.0) return 'normal';
+    if (v === 150.0 && c === 10.0 && p === 120.0) return 'alto';
     return null;
   };
 
@@ -465,7 +507,7 @@ export const DeviceDetailScreen = () => {
   };
 
   const zoneColor = getZoneColor(zone);
-  const powerButtonDisabled = isSendingCommand || !isOnline || activeBmsAlert !== null;
+  const powerButtonDisabled = isSendingCommand || !isOnline;
 
   const handleSaveName = async () => {
     if (!mac) return;
@@ -592,73 +634,7 @@ export const DeviceDetailScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* --- BMS CRITICAL ALERT BOX --- */}
-        {activeBmsAlert && (
-          <View style={{
-            backgroundColor: '#FFF1F2',
-            borderColor: '#F43F5E',
-            borderWidth: 2,
-            borderRadius: 16,
-            padding: 16,
-            marginHorizontal: 16,
-            marginTop: 20,
-            marginBottom: 5,
-            shadowColor: '#F43F5E',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.15,
-            shadowRadius: 8,
-            elevation: 4,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-              <Feather name="alert-triangle" size={24} color="#E11D48" style={{ marginRight: 8 }} />
-              <Text style={{ fontSize: 16, fontWeight: '800', color: '#9F1239' }}>
-                ¡APAGADO DE EMERGENCIA IA!
-              </Text>
-            </View>
-            <Text style={{ fontSize: 13, color: '#BE123C', fontWeight: '600', lineHeight: 18, marginBottom: 12 }}>
-              {activeBmsAlert.mensaje || 'Se ha detectado una condición crítica en el dispositivo (BMS thermal shutdown) y la IA del sistema ha forzado un apagado preventivo inmediato. El control remoto permanecerá deshabilitado por seguridad.'}
-            </Text>
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#E11D48',
-                borderRadius: 10,
-                paddingVertical: 12,
-                alignItems: 'center',
-                shadowColor: '#E11D48',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.2,
-                shadowRadius: 4,
-                elevation: 2,
-              }}
-              activeOpacity={0.8}
-              onPress={async () => {
-                try {
-                  const success = await apiClient.resolveAlert(activeBmsAlert.id);
-                  if (success) {
-                    setActiveBmsAlert(null);
-                    Alert.alert('Alerta Confirmada', 'El estado de alerta ha sido confirmado. El control del dispositivo ha sido restablecido.');
-                    addLog({
-                      type: 'USER_ACTION',
-                      title: 'Alerta BMS Confirmada',
-                      message: `${userName || 'El usuario'} confirmó y restableció la alerta BMS crítica para "${deviceName}".`,
-                      device_id: id,
-                      device_name: deviceName,
-                    });
-                    fetchDeviceData();
-                  } else {
-                    Alert.alert('Error', 'No se pudo restablecer la alerta. Intente de nuevo.');
-                  }
-                } catch {
-                  Alert.alert('Error', 'Fallo al comunicarse con el servidor.');
-                }
-              }}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
-                Confirmar y Habilitar Control
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+
 
         {/* --- POWER BUTTON (CENTER) --- */}
         <View style={styles.powerButtonContainer}>
@@ -707,42 +683,101 @@ export const DeviceDetailScreen = () => {
           </View>
 
           {/* --- AI ASSESSMENT CARD --- */}
-          <View style={styles.aiCard}>
-            <View style={styles.aiHeader}>
-              <Feather name="cpu" size={16} color="#64748B" />
-              <Text style={styles.aiTitle}>Seguridad IA</Text>
-            </View>
-            <View style={{ flexDirection: 'column', gap: 6, width: '100%' }}>
+          <View style={[
+            styles.aiCard,
+            activeBmsAlert !== null && {
+              borderColor: '#EF4444',
+              borderWidth: 2,
+              backgroundColor: '#FEF2F2',
+            }
+          ]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <View style={styles.aiHeader}>
+                <Feather name="cpu" size={16} color={activeBmsAlert ? '#EF4444' : '#64748B'} />
+                <Text style={[styles.aiTitle, activeBmsAlert !== null && { color: '#991B1B' }]}>Seguridad IA</Text>
+              </View>
               <View style={[
                 styles.zoneTextContainer, 
-                { backgroundColor: isOn && isOnline ? getZoneBgColor(zone) : '#F1F5F9', width: '100%' }
+                { backgroundColor: activeBmsAlert ? '#FEE2E2' : (isOn && isOnline ? getZoneBgColor(zone) : '#F1F5F9') }
               ]}>
                 <Text style={[
                   styles.zoneText, 
-                  { color: isOn && isOnline ? zoneColor : '#94A3B8' }
+                  { color: activeBmsAlert ? '#EF4444' : (isOn && isOnline ? zoneColor : '#94A3B8') }
                 ]}>
-                  {!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'ALERTA' : 'CRÍTICO') : 'EN ESPERA'}
+                  {activeBmsAlert ? 'CRÍTICO' : (!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'ALERTA' : 'CRÍTICO') : 'EN ESPERA')}
                 </Text>
               </View>
-              {isOnline && (
-                <View style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                  backgroundColor: aiStatus === 1 ? '#FEF3C7' : aiStatus === 2 ? '#FEE2E2' : '#D1FAE5',
-                  alignItems: 'center',
-                  width: '100%',
-                }}>
-                  <Text style={{
-                    fontSize: 10,
-                    fontWeight: '800',
-                    color: aiStatus === 1 ? '#D97706' : aiStatus === 2 ? '#DC2626' : '#059669',
-                  }}>
-                    {aiStatus === 1 ? 'IA DISPOSITIVO: EN RIESGO' : aiStatus === 2 ? 'IA DISPOSITIVO: CRÍTICO' : 'IA DISPOSITIVO: SEGURO'}
-                  </Text>
-                </View>
-              )}
             </View>
+            
+            {activeBmsAlert ? (
+              <View style={{ marginTop: 10, width: '100%' }}>
+                <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600', lineHeight: 17, marginBottom: 10 }}>
+                  {activeBmsAlert.mensaje || 'Se ha detectado una condición crítica en el dispositivo (BMS thermal shutdown) y la IA del sistema ha forzado un apagado preventivo inmediato. El control remoto permanecerá deshabilitado por seguridad.'}
+                </Text>
+                
+                {resolveError && (
+                  <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
+                    {resolveError}
+                  </Text>
+                )}
+
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#EF4444',
+                    borderRadius: 10,
+                    paddingVertical: 10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    shadowColor: '#EF4444',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 4,
+                    elevation: 2,
+                    width: '100%',
+                    opacity: isResolvingAlert ? 0.8 : 1,
+                  }}
+                  activeOpacity={0.8}
+                  disabled={isResolvingAlert}
+                  onPress={async () => {
+                    setIsResolvingAlert(true);
+                    setResolveError(null);
+                    try {
+                      // Resolve all active BMS alerts for this device concurrently
+                      const results = await Promise.all(
+                        activeBmsAlertsList.map(a => apiClient.resolveAlert(a.id))
+                      );
+                      const success = results.length > 0 && results.every(res => res === true);
+                      if (success) {
+                        setActiveBmsAlert(null);
+                        setActiveBmsAlertsList([]);
+                        addLog({
+                          type: 'USER_ACTION',
+                          title: 'Alerta BMS Confirmada',
+                          message: `${userName || 'El usuario'} confirmó y restableció las alertas BMS críticas para "${deviceName}".`,
+                          device_id: id,
+                          device_name: deviceName,
+                        });
+                        await fetchDeviceData();
+                      } else {
+                        setResolveError('Error: No se pudieron restablecer todas las alertas. Intente de nuevo.');
+                      }
+                    } catch (err) {
+                      setResolveError('Error: Fallo de red. Compruebe su conexión e intente de nuevo.');
+                    } finally {
+                      setIsResolvingAlert(false);
+                    }
+                  }}
+                >
+                  {isResolvingAlert ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+                      Confirmar
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
 
           {/* --- PRIORITY SELECTOR CARD --- */}
@@ -1152,7 +1187,7 @@ export const DeviceDetailScreen = () => {
             </View>
 
             <Text style={modalStyles.subtitle}>
-              {keyboardModalTarget === 'v' ? 'Rango permitido: 0.1V - 60.0V' 
+              {keyboardModalTarget === 'v' ? 'Rango permitido: 0.1V - 250.0V' 
                : keyboardModalTarget === 'c' ? 'Rango permitido: 0.1A - 30.0A' 
                : 'Rango permitido: 0.1W - 500.0W'}
             </Text>
