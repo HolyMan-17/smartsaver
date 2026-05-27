@@ -5,6 +5,7 @@ export interface TelemetryReading {
   corriente: number;
   potencia: number;
   tiempo_operacion_s: number;
+  ai_status?: number;
 }
 
 export interface WSTelemetriaMessage {
@@ -19,7 +20,17 @@ export interface WSConexionMessage {
   data: { is_online: boolean };
 }
 
-export type WSMessage = WSTelemetriaMessage | WSConexionMessage;
+export interface WSAlertaMessage {
+  type: "alerta";
+  mac: string;
+  data: {
+    alerta: string;
+    ai_status: number;
+    estado_reportado: boolean;
+  };
+}
+
+export type WSMessage = WSTelemetriaMessage | WSConexionMessage | WSAlertaMessage;
 
 export interface MLPrediction {
   current_zone: BatteryZone;

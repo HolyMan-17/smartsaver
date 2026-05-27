@@ -9,6 +9,7 @@ export interface TelemetriaResponse {
   potencia: number;
   tiempo_operacion_s: number;
   estado_sin_cambios: boolean;
+  ai_status?: number;
 }
 
 export interface DispositivoResponse {

@@ -6,7 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { styles } from './DeviceDetailScreen.styles';
 import { apiClient } from '../../services/apiClient';
-import { DispositivoLimitesCommand } from '../../types/api';
+import { DispositivoLimitesCommand, AlertaResponse } from '../../types/api';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
 import { sendLocalNotification } from '../../utils/notifications';
@@ -33,6 +33,8 @@ export const DeviceDetailScreen = () => {
   const [zone, setZone] = useState<Zone>('Safe');
   const [isLoading, setIsLoading] = useState(true);
   const [isSendingCommand, setIsSendingCommand] = useState(false);
+  const [aiStatus, setAiStatus] = useState<number>(0);
+  const [activeBmsAlert, setActiveBmsAlert] = useState<AlertaResponse | null>(null);
 
   // Refs to track previous values for change-detection logging
   const prevOnline = useRef<boolean | null>(null);
@@ -111,11 +113,29 @@ export const DeviceDetailScreen = () => {
   const fetchDeviceData = async () => {
     if (!mac) return;
 
-    // Fetch telemetry AND connection state concurrently to avoid network waterfalls
-    const [telemetryResult, connectionResult] = await Promise.all([
+    // Fetch telemetry, connection state, and active alerts concurrently
+    const [telemetryResult, connectionResult, alertsResult] = await Promise.all([
       apiClient.getTelemetryHistory(mac, 1),
       apiClient.getDeviceDetail(mac),
+      apiClient.getAlerts(true),
     ]);
+
+    // Process active alerts for BMS critical state matching this device ID
+    let hasActiveBmsAlert = false;
+    if (alertsResult) {
+      const bmsAlert = alertsResult.find(
+        (a) =>
+          String(a.id_artefacto) === String(id) &&
+          a.tipo_alerta === 'bms_critica' &&
+          !a.resuelto
+      );
+      if (bmsAlert) {
+        hasActiveBmsAlert = true;
+        setActiveBmsAlert(bmsAlert);
+      } else {
+        setActiveBmsAlert(null);
+      }
+    }
 
     // Process telemetry
     if (telemetryResult && telemetryResult.length > 0) {
@@ -123,6 +143,7 @@ export const DeviceDetailScreen = () => {
       setVoltage(latest.voltaje);
       setCurrent(latest.corriente);
       setWatts(latest.potencia);
+      setAiStatus(latest.ai_status ?? 0);
 
       const newZone = classifyZone(latest.potencia);
       // ── Log AI zone transitions ──
@@ -150,7 +171,7 @@ export const DeviceDetailScreen = () => {
       const overCurrent = limits.c !== undefined && latest.corriente > limits.c;
       const overPower = limits.p !== undefined && latest.potencia > limits.p;
 
-      if ((overVoltage || overCurrent || overPower) && isOnRef.current) {
+      if ((overVoltage || overCurrent || overPower) && isOnRef.current && !hasActiveBmsAlert) {
         // Enforce shutdown
         setIsOn(false); // Optimistic UI update
         apiClient.setDeviceState(mac, false);
@@ -193,9 +214,15 @@ export const DeviceDetailScreen = () => {
     
     // Sync power state from backend
     if (connectionResult) {
-      setIsOn(connectionResult.estado_reportado);
-      isOnRef.current = connectionResult.estado_reportado;
-      setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
+      if (hasActiveBmsAlert) {
+        setIsOn(false);
+        isOnRef.current = false;
+        setIsSyncing(false);
+      } else {
+        setIsOn(connectionResult.estado_reportado);
+        isOnRef.current = connectionResult.estado_reportado;
+        setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
+      }
       setPriority(connectionResult.nivel_prioridad);
     }
 
@@ -438,7 +465,7 @@ export const DeviceDetailScreen = () => {
   };
 
   const zoneColor = getZoneColor(zone);
-  const powerButtonDisabled = isSendingCommand || !isOnline;
+  const powerButtonDisabled = isSendingCommand || !isOnline || activeBmsAlert !== null;
 
   const handleSaveName = async () => {
     if (!mac) return;
@@ -565,6 +592,74 @@ export const DeviceDetailScreen = () => {
           </TouchableOpacity>
         </View>
 
+        {/* --- BMS CRITICAL ALERT BOX --- */}
+        {activeBmsAlert && (
+          <View style={{
+            backgroundColor: '#FFF1F2',
+            borderColor: '#F43F5E',
+            borderWidth: 2,
+            borderRadius: 16,
+            padding: 16,
+            marginHorizontal: 16,
+            marginTop: 20,
+            marginBottom: 5,
+            shadowColor: '#F43F5E',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 8,
+            elevation: 4,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <Feather name="alert-triangle" size={24} color="#E11D48" style={{ marginRight: 8 }} />
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#9F1239' }}>
+                ¡APAGADO DE EMERGENCIA IA!
+              </Text>
+            </View>
+            <Text style={{ fontSize: 13, color: '#BE123C', fontWeight: '600', lineHeight: 18, marginBottom: 12 }}>
+              {activeBmsAlert.mensaje || 'Se ha detectado una condición crítica en el dispositivo (BMS thermal shutdown) y la IA del sistema ha forzado un apagado preventivo inmediato. El control remoto permanecerá deshabilitado por seguridad.'}
+            </Text>
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#E11D48',
+                borderRadius: 10,
+                paddingVertical: 12,
+                alignItems: 'center',
+                shadowColor: '#E11D48',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 2,
+              }}
+              activeOpacity={0.8}
+              onPress={async () => {
+                try {
+                  const success = await apiClient.resolveAlert(activeBmsAlert.id);
+                  if (success) {
+                    setActiveBmsAlert(null);
+                    Alert.alert('Alerta Confirmada', 'El estado de alerta ha sido confirmado. El control del dispositivo ha sido restablecido.');
+                    addLog({
+                      type: 'USER_ACTION',
+                      title: 'Alerta BMS Confirmada',
+                      message: `${userName || 'El usuario'} confirmó y restableció la alerta BMS crítica para "${deviceName}".`,
+                      device_id: id,
+                      device_name: deviceName,
+                    });
+                    fetchDeviceData();
+                  } else {
+                    Alert.alert('Error', 'No se pudo restablecer la alerta. Intente de nuevo.');
+                  }
+                } catch {
+                  Alert.alert('Error', 'Fallo al comunicarse con el servidor.');
+                }
+              }}
+            >
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
+                Confirmar y Habilitar Control
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* --- POWER BUTTON (CENTER) --- */}
         <View style={styles.powerButtonContainer}>
           <TouchableOpacity 
@@ -617,16 +712,36 @@ export const DeviceDetailScreen = () => {
               <Feather name="cpu" size={16} color="#64748B" />
               <Text style={styles.aiTitle}>Seguridad IA</Text>
             </View>
-            <View style={[
-              styles.zoneTextContainer, 
-              { backgroundColor: isOn && isOnline ? getZoneBgColor(zone) : '#F1F5F9' }
-            ]}>
-              <Text style={[
-                styles.zoneText, 
-                { color: isOn && isOnline ? zoneColor : '#94A3B8' }
+            <View style={{ flexDirection: 'column', gap: 6, width: '100%' }}>
+              <View style={[
+                styles.zoneTextContainer, 
+                { backgroundColor: isOn && isOnline ? getZoneBgColor(zone) : '#F1F5F9', width: '100%' }
               ]}>
-                {!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'ALERTA' : 'CRÍTICO') : 'EN ESPERA'}
-              </Text>
+                <Text style={[
+                  styles.zoneText, 
+                  { color: isOn && isOnline ? zoneColor : '#94A3B8' }
+                ]}>
+                  {!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'ALERTA' : 'CRÍTICO') : 'EN ESPERA'}
+                </Text>
+              </View>
+              {isOnline && (
+                <View style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 8,
+                  backgroundColor: aiStatus === 1 ? '#FEF3C7' : aiStatus === 2 ? '#FEE2E2' : '#D1FAE5',
+                  alignItems: 'center',
+                  width: '100%',
+                }}>
+                  <Text style={{
+                    fontSize: 10,
+                    fontWeight: '800',
+                    color: aiStatus === 1 ? '#D97706' : aiStatus === 2 ? '#DC2626' : '#059669',
+                  }}>
+                    {aiStatus === 1 ? 'IA DISPOSITIVO: EN RIESGO' : aiStatus === 2 ? 'IA DISPOSITIVO: CRÍTICO' : 'IA DISPOSITIVO: SEGURO'}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 

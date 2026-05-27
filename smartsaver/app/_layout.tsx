@@ -13,6 +13,7 @@ import { useUserStore } from '../src/store/useUserStore';
 import { useAuthStore } from '../src/store/useAuthStore';
 import { setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
+import { useTelemetryStore } from '../src/store/useTelemetryStore';
 
 // Must be at app root level so it intercepts the Auth0 callback
 // deep link BEFORE Expo Router tries to match it as a route.
@@ -32,6 +33,9 @@ export default function RootLayout() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isLoading = useAuthStore((state) => state.isLoading);
   const rehydrate = useAuthStore((state) => state.rehydrate);
+  
+  const startConnection = useTelemetryStore((state) => state.startConnection);
+  const stopConnection = useTelemetryStore((state) => state.stopConnection);
 
   useEffect(() => {
     requestNotificationPermissions();
@@ -39,6 +43,14 @@ export default function RootLayout() {
     rehydrate();
     setAccessTokenGetter(useAuthStore.getState().getAccessToken);
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      startConnection();
+    } else {
+      stopConnection();
+    }
+  }, [isAuthenticated, startConnection, stopConnection]);
 
   if (isLoading) {
     return (

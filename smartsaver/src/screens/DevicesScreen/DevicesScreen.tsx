@@ -15,6 +15,7 @@ interface DeviceNode {
   current: number;
   watts: number;
   zone: 'Safe' | 'Warning' | 'Critical';
+  aiStatus: number;
 }
 
 // Fallback device registry — used only when API is unavailable
@@ -57,6 +58,7 @@ export const DevicesScreen = () => {
               current: latest?.corriente ?? 0,
               watts: latest?.potencia ?? 0,
               zone: latest ? classifyZone(latest.potencia) : 'Safe',
+              aiStatus: latest?.ai_status ?? 0,
             });
           } catch {
             results.push({
@@ -67,6 +69,7 @@ export const DevicesScreen = () => {
               current: 0,
               watts: 0,
               zone: 'Safe',
+              aiStatus: 0,
             });
           }
         }
@@ -92,6 +95,18 @@ export const DevicesScreen = () => {
             current: latest.corriente,
             watts: latest.potencia,
             zone: classifyZone(latest.potencia),
+            aiStatus: latest.ai_status ?? 0,
+          });
+        } else {
+          results.push({
+            id: reg.id,
+            name: reg.name,
+            mac: reg.mac,
+            voltage: 0,
+            current: 0,
+            watts: 0,
+            zone: 'Safe',
+            aiStatus: 0,
           });
         }
       } catch {
@@ -103,6 +118,7 @@ export const DevicesScreen = () => {
           current: 0,
           watts: 0,
           zone: 'Safe',
+          aiStatus: 0,
         });
       }
     }
@@ -197,8 +213,21 @@ export const DevicesScreen = () => {
     setEditName(device.name === device.mac ? '' : device.name);
   };
 
+  const getAiStatusDetails = (status: number) => {
+    switch (status) {
+      case 1:
+        return { label: 'IA: RIESGO', color: '#D97706', bg: '#FEF3C7' };
+      case 2:
+        return { label: 'IA: CRÍTICO', color: '#DC2626', bg: '#FEE2E2' };
+      case 0:
+      default:
+        return { label: 'IA: SEGURO', color: '#059669', bg: '#D1FAE5' };
+    }
+  };
+
   const renderItem = ({ item }: { item: DeviceNode }) => {
     const zoneStyle = getZoneStyles(item.zone);
+    const aiDetails = getAiStatusDetails(item.aiStatus);
 
     return (
       <TouchableOpacity 
@@ -224,6 +253,20 @@ export const DevicesScreen = () => {
             </Text>
             <Text style={styles.deviceMetaText}>
               {item.voltage.toFixed(1)}V • {item.watts.toFixed(1)}W
+            </Text>
+          </View>
+          
+          {/* AI Status Badge */}
+          <View style={{
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 12,
+            backgroundColor: aiDetails.bg,
+            alignSelf: 'flex-start',
+            marginTop: 6,
+          }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', color: aiDetails.color }}>
+              {aiDetails.label}
             </Text>
           </View>
         </View>
