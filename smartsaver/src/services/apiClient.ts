@@ -8,6 +8,9 @@ import {
   AlertaResponse,
   EventoResponse,
   ApiErrorResponse,
+  UserSettingsResponse,
+  UserSettingsUpdate,
+  AIOverrideResponse,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -262,6 +265,48 @@ export const apiClient = {
       return res.json();
     } catch (e) {
       throw e;
+    }
+  },
+
+  // ─── AI Control & User Settings ──────────────────────────
+  
+  getUserSettings: async (): Promise<UserSettingsResponse> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/users/settings`);
+      if (!res.ok) {
+        return { ai_control_habilitado: false, auto_apagado_low_priority: false };
+      }
+      return res.json();
+    } catch {
+      return { ai_control_habilitado: false, auto_apagado_low_priority: false };
+    }
+  },
+
+  updateUserSettings: async (data: UserSettingsUpdate): Promise<UserSettingsResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/users/settings`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  overrideAutoKill: async (mac: string): Promise<AIOverrideResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}/ai-control/override`, {
+        method: 'POST',
+      });
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
     }
   },
 };

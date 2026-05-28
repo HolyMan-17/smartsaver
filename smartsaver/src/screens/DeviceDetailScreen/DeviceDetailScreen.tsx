@@ -39,10 +39,16 @@ export const DeviceDetailScreen = () => {
   const [isResolvingAlert, setIsResolvingAlert] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
+  // AI Auto-Kill States
+  const [autoKillAt, setAutoKillAt] = useState<string | null>(null);
+  const [autoKillCountdown, setAutoKillCountdown] = useState<string>('');
+  const [isOverriding, setIsOverriding] = useState(false);
+
   // Refs to track previous values for change-detection logging
   const prevOnline = useRef<boolean | null>(null);
   const prevZone = useRef<Zone | null>(null);
   const prevVoltageState = useRef<'normal' | 'sag' | 'spike'>('normal');
+  const prevAutoKillAt = useRef<string | null>(null);
 
   // Limits modal state
   const [showLimitsModal, setShowLimitsModal] = useState(false);
@@ -98,6 +104,65 @@ export const DeviceDetailScreen = () => {
   useEffect(() => {
     savedLimitsRef.current = savedLimits;
   }, [savedLimits]);
+
+  useEffect(() => {
+    if (!autoKillAt) {
+      setAutoKillCountdown('');
+      return;
+    }
+
+    const updateCountdown = () => {
+      const target = new Date(autoKillAt).getTime();
+      const now = Date.now();
+      const diff = target - now;
+
+      if (diff <= 0) {
+        setAutoKillCountdown('00:00');
+        setAutoKillAt(null);
+        fetchDeviceData(); // force-refresh state
+      } else {
+        const totalSecs = Math.floor(diff / 1000);
+        const mins = Math.floor(totalSecs / 60);
+        const secs = totalSecs % 60;
+        const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        setAutoKillCountdown(formatted);
+      }
+    };
+
+    updateCountdown(); // run immediately
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [autoKillAt]);
+
+  const handleOverrideAutoKill = async () => {
+    if (!mac || isOverriding) return;
+    setIsOverriding(true);
+    try {
+      const res = await apiClient.overrideAutoKill(mac);
+      if (res && res.status === 'overridden') {
+        setAutoKillAt(null);
+        setAutoKillCountdown('');
+        Alert.alert(
+          'Control IA Pospuesto',
+          'El apagado automático ha sido cancelado. Se aplicará una tregua de 30 minutos por seguridad.'
+        );
+        addLog({
+          type: 'USER_ACTION',
+          title: 'IA Pospuesta por Usuario',
+          message: `${userName || 'El usuario'} pospuso el apagado automático de ${deviceName} por 30 minutos.`,
+          device_id: id,
+          device_name: deviceName,
+        });
+        fetchDeviceData(); // refresh from backend
+      } else {
+        Alert.alert('Error', 'No se pudo posponer el apagado. Comprueba tu conexión.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo contactar al servidor');
+    } finally {
+      setIsOverriding(false);
+    }
+  };
 
   const loadSavedLimits = async () => {
     try {
@@ -249,6 +314,17 @@ export const DeviceDetailScreen = () => {
       isOnRef.current = connectionResult.estado_reportado;
       setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
       setPriority(connectionResult.nivel_prioridad);
+      
+      const serverAutoKillAt = connectionResult.auto_kill_at;
+      setAutoKillAt(serverAutoKillAt);
+
+      if (prevAutoKillAt.current === null && serverAutoKillAt !== null) {
+        sendLocalNotification(
+          '⚠️ Apagado IA Programado',
+          `El dispositivo ${deviceName} se apagará automáticamente por consumo excesivo prolongado.`
+        );
+      }
+      prevAutoKillAt.current = serverAutoKillAt;
     }
 
     // ── Log connection state changes ──
@@ -663,6 +739,54 @@ export const DeviceDetailScreen = () => {
             {!isOnline ? 'DISPOSITIVO INALCANZABLE' : isSyncing ? 'SINCRONIZANDO...' : isSendingCommand ? 'ENVIANDO COMANDO...' : isOn ? 'DISPOSITIVO EN LÍNEA' : 'DISPOSITIVO DESCONECTADO'}
           </Text>
         </View>
+
+        {/* --- AUTO-KILL COUNTDOWN BANNER --- */}
+        {autoKillAt && autoKillCountdown ? (
+          <View style={{ 
+            borderColor: '#F59E0B', 
+            borderWidth: 1.5, 
+            backgroundColor: '#FEF3C7', 
+            marginHorizontal: 16, 
+            marginBottom: 16, 
+            borderRadius: 16, 
+            padding: 16 
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Feather name="clock" size={24} color="#D97706" style={{ marginRight: 10 }} />
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#B45309' }}>
+                    Apagado programado (IA)
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#D97706', marginTop: 2 }}>
+                    Riesgo prolongado. Apagando en: <Text style={{ fontWeight: '800', color: '#B45309' }}>{autoKillCountdown}</Text>
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={handleOverrideAutoKill}
+                disabled={isOverriding}
+                style={{
+                  backgroundColor: '#D97706',
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  minWidth: 80,
+                }}
+              >
+                {isOverriding ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>
+                    Mantener
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.cardsContainer}>
           

@@ -26,6 +26,24 @@ export interface DispositivoResponse {
   is_online: boolean;
   nivel_acceso: string;
   last_seen_at: string | null;
+  auto_kill_at: string | null;
+  ai_override_until: string | null;
+}
+
+export interface UserSettingsResponse {
+  ai_control_habilitado: boolean;
+  auto_apagado_low_priority: boolean;
+}
+
+export interface UserSettingsUpdate {
+  ai_control_habilitado?: boolean;
+  auto_apagado_low_priority?: boolean;
+}
+
+export interface AIOverrideResponse {
+  status: string;
+  mac: string;
+  ai_override_until: string | null;
 }
 
 export interface AgregadosResponse {

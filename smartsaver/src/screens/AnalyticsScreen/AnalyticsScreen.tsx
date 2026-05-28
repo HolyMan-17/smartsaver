@@ -183,7 +183,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
       // fall through to fallback
     }
     const fallback: DispositivoResponse[] = [
-      { id: 1, mac: '00:1B:44:11:3A:B7', nombre_personalizado: null, nivel_prioridad: 'media', limite_consumo_w: 0, limite_voltaje: null, limite_corriente: null, limite_potencia: null, estado_deseado: false, estado_reportado: false, is_online: false, nivel_acceso: 'ADMIN', last_seen_at: null },
+      { id: 1, mac: '00:1B:44:11:3A:B7', nombre_personalizado: null, nivel_prioridad: 'media', limite_consumo_w: 0, limite_voltaje: null, limite_corriente: null, limite_potencia: null, estado_deseado: false, estado_reportado: false, is_online: false, nivel_acceso: 'ADMIN', last_seen_at: null, auto_kill_at: null, ai_override_until: null },
     ];
     setAllDevices(fallback);
     return fallback;

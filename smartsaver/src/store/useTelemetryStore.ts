@@ -89,6 +89,21 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
           '🚨 Alerta Crítica (IA)',
           `${msg.data.alerta}`
         );
+      } else if (msg.type === 'auto_kill_warning') {
+        sendLocalNotification(
+          '⚠️ Apagado IA Programado',
+          `El dispositivo se apagará automáticamente en ${msg.data.grace_period_min} minutos por consumo excesivo.`
+        );
+      } else if (msg.type === 'auto_kill_executed') {
+        sendLocalNotification(
+          '⚡ Dispositivo Apagado',
+          `El dispositivo fue apagado automáticamente debido a consumo excesivo prolongado.`
+        );
+      } else if (msg.type === 'auto_kill_cancelled') {
+        sendLocalNotification(
+          '✅ Apagado IA Cancelado',
+          `El consumo se normalizó y se canceló el apagado programado.`
+        );
       }
     });
 

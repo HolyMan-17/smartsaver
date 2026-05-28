@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { CustomSwitch } from '../../../components/ui/CustomSwitch';
+import { apiClient } from '../../services/apiClient';
 
 export const SettingsScreen = () => {
   // Theme state
@@ -25,10 +26,79 @@ export const SettingsScreen = () => {
   const authUser = useAuthStore((s) => s.user);
 
   // State for Toggles
-  const [enableAI, setEnableAI] = useState(true);
-  const [autoLoadShedding, setAutoLoadShedding] = useState(true);
+  const [enableAI, setEnableAI] = useState(false);
+  const [autoLoadShedding, setAutoLoadShedding] = useState(false);
   const [notifyCritical, setNotifyCritical] = useState(true);
   const [notifyWarnings, setNotifyWarnings] = useState(true);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const settings = await apiClient.getUserSettings();
+        setEnableAI(settings.ai_control_habilitado);
+        setAutoLoadShedding(settings.auto_apagado_low_priority);
+      } catch (err) {
+        console.error('Error fetching settings:', err);
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  const handleToggleAI = async (newValue: boolean) => {
+    if (isUpdatingSettings) return;
+    setIsUpdatingSettings(true);
+    // Optimistic update
+    const previousValue = enableAI;
+    setEnableAI(newValue);
+
+    try {
+      const updated = await apiClient.updateUserSettings({ ai_control_habilitado: newValue });
+      if (updated) {
+        addLog({
+          type: 'USER_ACTION',
+          title: newValue ? 'Control IA Habilitado' : 'Control IA Deshabilitado',
+          message: `${userName || 'El usuario'} ${newValue ? 'habilitó' : 'deshabilitó'} el control maestro de IA global para sus dispositivos.`,
+        });
+      } else {
+        throw new Error('Server returned failed status');
+      }
+    } catch (err) {
+      setEnableAI(previousValue);
+      Alert.alert('Error', 'No se pudieron guardar tus ajustes de IA. Comprueba tu conexión.');
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
+
+  const handleToggleLoadShedding = async (newValue: boolean) => {
+    if (isUpdatingSettings) return;
+    setIsUpdatingSettings(true);
+    // Optimistic update
+    const previousValue = autoLoadShedding;
+    setAutoLoadShedding(newValue);
+
+    try {
+      const updated = await apiClient.updateUserSettings({ auto_apagado_low_priority: newValue });
+      if (updated) {
+        addLog({
+          type: 'USER_ACTION',
+          title: newValue ? 'Corte P3 Habilitado' : 'Corte P3 Deshabilitado',
+          message: `${userName || 'El usuario'} ${newValue ? 'habilitó' : 'deshabilitó'} el auto-apagado de dispositivos de baja prioridad (P3).`,
+        });
+      } else {
+        throw new Error('Server returned failed status');
+      }
+    } catch (err) {
+      setAutoLoadShedding(previousValue);
+      Alert.alert('Error', 'No se pudieron guardar tus ajustes de corte. Comprueba tu conexión.');
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
 
   const handleClearCache = () => {
     Alert.alert(
@@ -83,6 +153,14 @@ export const SettingsScreen = () => {
       ]
     );
   };
+
+  if (isLoadingSettings) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -161,14 +239,15 @@ export const SettingsScreen = () => {
               </View>
               <View style={styles.textWrapper}>
                 <Text style={styles.rowTitle}>Control Maestro de IA</Text>
-                <Text style={styles.rowSubtitle}>Permitir que la IA tome decisiones</Text>
+                <Text style={styles.rowSubtitle}>Permitir que la IA gestione mis dispositivos</Text>
               </View>
             </View>
             <CustomSwitch
               value={enableAI}
-              onValueChange={setEnableAI}
+              onValueChange={handleToggleAI}
               activeColor="#3B82F6"
               inactiveColor={colors.border}
+              disabled={isUpdatingSettings}
             />
           </View>
           
@@ -179,19 +258,19 @@ export const SettingsScreen = () => {
               </View>
               <View style={styles.textWrapper}>
                 <Text style={[styles.rowTitle, !enableAI && styles.disabledText]}>
-                  Corte de Carga Automático
+                  Apagado de baja prioridad
                 </Text>
                 <Text style={[styles.rowSubtitle, !enableAI && styles.disabledText]}>
-                  Apagar automáticamente dispositivos P3/P4 en caso de alerta
+                  Apagar inmediatamente dispositivos P3 si detecta consumo riesgoso
                 </Text>
               </View>
             </View>
             <CustomSwitch
-              value={autoLoadShedding && enableAI}
-              onValueChange={setAutoLoadShedding}
-              disabled={!enableAI}
+              value={autoLoadShedding}
+              onValueChange={handleToggleLoadShedding}
               activeColor="#3B82F6"
               inactiveColor={colors.border}
+              disabled={isUpdatingSettings}
             />
           </View>
         </View>
