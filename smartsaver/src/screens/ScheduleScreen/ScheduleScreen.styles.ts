@@ -249,75 +249,83 @@ export const getStyles = (colors: any) => StyleSheet.create({
     marginBottom: 20,
   },
 
-  // Period Toggle Selector (AM/PM)
-  periodContainer: {
+  // Wheel Picker styles
+  wheelPickerContainer: {
     flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 180,
+    marginVertical: 20,
+    position: 'relative',
     backgroundColor: colors.iconBg,
-    borderRadius: 14,
-    padding: 4,
-    width: '100%',
-    marginBottom: 20,
+    borderRadius: 20,
+    paddingHorizontal: 10,
     borderWidth: 1,
     borderColor: colors.borderSoft,
+    overflow: 'hidden',
   },
-  periodButton: {
+  wheelColumn: {
     flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 10,
+    justifyContent: 'center',
+    height: '100%',
   },
-  periodButtonActive: {
-    backgroundColor: '#3B82F6',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+  wheelColumnLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    position: 'absolute',
+    top: 6,
+    zIndex: 1,
   },
-  periodButtonText: {
-    fontSize: 14,
+  wheelScrollView: {
+    width: '100%',
+    height: 180,
+  },
+  wheelItem: {
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  wheelItemText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    opacity: 0.4,
+    textAlign: 'center',
+  },
+  wheelItemTextSelected: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#3B82F6',
+    opacity: 1,
+    textAlign: 'center',
+  },
+  wheelSeparator: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 60,
+    paddingHorizontal: 8,
+  },
+  wheelSeparatorText: {
+    fontSize: 24,
     fontWeight: '800',
     color: colors.textSecondary,
   },
-  periodButtonTextActive: {
-    color: '#FFFFFF',
-  },
-
-  // Grid list of hours
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
-    columnGap: 8,
-    marginBottom: 24,
-  },
-  gridItem: {
-    width: '22%',
-    height: 44,
+  wheelSelectionIndicator: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 60,
+    height: 60,
+    borderTopWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.background + '20',
     borderRadius: 12,
-    backgroundColor: colors.iconBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-  },
-  gridItemActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  gridItemText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  gridItemTextActive: {
-    color: '#FFFFFF',
   },
 
   // Footer buttons in Modal

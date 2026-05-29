@@ -1,20 +1,36 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 /**
  * Request user permissions for push notifications.
  * Should be called on app mount.
  */
 export async function requestNotificationPermissions() {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        return true;
+      }
+      if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        return permission === 'granted';
+      }
+    }
+    console.log('Web notifications are not supported or blocked by browser settings.');
+    return false;
+  }
+
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
@@ -46,6 +62,22 @@ export async function requestNotificationPermissions() {
  * @param data Optional extra data payload
  */
 export async function sendLocalNotification(title: string, body: string, data?: any) {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body,
+          tag: data?.tag || undefined,
+        });
+      } catch (e) {
+        console.error('Failed to trigger web Notification:', e);
+      }
+    } else {
+      console.log(`[Web Notification Fallback] [${title}]: ${body}`);
+    }
+    return;
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title,

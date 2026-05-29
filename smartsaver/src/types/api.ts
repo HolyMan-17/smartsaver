@@ -28,6 +28,21 @@ export interface DispositivoResponse {
   last_seen_at: string | null;
   auto_kill_at: string | null;
   ai_override_until: string | null;
+  automatizacion_activa?: boolean;
+}
+
+export interface HorarioBase {
+  dias_operacion: number[];
+  hora_encendido: string | null; // Format "HH:mm:ss"
+  hora_apagado: string | null;   // Format "HH:mm:ss"
+  automatizacion_activa: boolean;
+}
+
+export interface HorarioUpdate extends HorarioBase {}
+
+export interface HorarioResponse extends HorarioBase {
+  id_artefacto: number;
+  actualizado_en: string;
 }
 
 export interface UserSettingsResponse {
@@ -85,6 +100,11 @@ export interface DispositivoLimitesCommand {
   limite_voltaje?: number | null;
   limite_corriente?: number | null;
   limite_potencia?: number | null;
+}
+
+export interface ComandoEstado {
+  encendido: boolean;
+  override_automation?: boolean;
 }
 
 export interface DispositivoUpdateCommand {

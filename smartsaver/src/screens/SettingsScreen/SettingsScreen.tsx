@@ -230,7 +230,7 @@ export const SettingsScreen = () => {
         </View>
 
         {/* 3. TINYML & AUTOMATION */}
-        <Text style={styles.sectionTitle}>TinyML y Automatización</Text>
+        <Text style={styles.sectionTitle}>Opciones de automatizacion</Text>
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.rowLeft}>
@@ -257,10 +257,10 @@ export const SettingsScreen = () => {
                 <Feather name="zap-off" size={18} color="#F59E0B" />
               </View>
               <View style={styles.textWrapper}>
-                <Text style={[styles.rowTitle, !enableAI && styles.disabledText]}>
+                <Text style={styles.rowTitle}>
                   Apagado de baja prioridad
                 </Text>
-                <Text style={[styles.rowSubtitle, !enableAI && styles.disabledText]}>
+                <Text style={styles.rowSubtitle}>
                   Apagar inmediatamente dispositivos P3 si detecta consumo riesgoso
                 </Text>
               </View>

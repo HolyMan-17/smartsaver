@@ -43,6 +43,8 @@ export const DeviceDetailScreen = () => {
   const [autoKillAt, setAutoKillAt] = useState<string | null>(null);
   const [autoKillCountdown, setAutoKillCountdown] = useState<string>('');
   const [isOverriding, setIsOverriding] = useState(false);
+  const [automatizacionActiva, setAutomatizacionActiva] = useState(false);
+  const [deviceSchedule, setDeviceSchedule] = useState<any>(null);
 
   // Refs to track previous values for change-detection logging
   const prevOnline = useRef<boolean | null>(null);
@@ -182,11 +184,12 @@ export const DeviceDetailScreen = () => {
   const fetchDeviceData = async () => {
     if (!mac) return;
 
-    // Fetch telemetry, connection state, and active alerts concurrently
-    const [telemetryResult, connectionResult, alertsResult] = await Promise.all([
+    // Fetch telemetry, connection state, active alerts, and schedule concurrently
+    const [telemetryResult, connectionResult, alertsResult, scheduleResult] = await Promise.all([
       apiClient.getTelemetryHistory(mac, 1),
       apiClient.getDeviceDetail(mac),
       apiClient.getAlerts(true),
+      apiClient.getDeviceSchedule(mac),
     ]);
 
     // Process active alerts for BMS critical state matching this device ID
@@ -317,6 +320,11 @@ export const DeviceDetailScreen = () => {
       
       const serverAutoKillAt = connectionResult.auto_kill_at;
       setAutoKillAt(serverAutoKillAt);
+      
+      // Use the explicitly fetched schedule to guarantee the automation state is captured 
+      // even if the backend hasn't deployed the DispositivoResponse updates.
+      setAutomatizacionActiva(scheduleResult?.automatizacion_activa ?? connectionResult.automatizacion_activa ?? false);
+      if (scheduleResult) setDeviceSchedule(scheduleResult);
 
       if (prevAutoKillAt.current === null && serverAutoKillAt !== null) {
         sendLocalNotification(
@@ -356,41 +364,100 @@ export const DeviceDetailScreen = () => {
     if (!mac || !isOnline) return; // Block commands to offline devices
     const newState = !isOn;
     
+    // Strict mode check
+    const isCurrentlyInSchedule = (): boolean => {
+      if (!automatizacionActiva || !deviceSchedule?.hora_encendido || !deviceSchedule?.hora_apagado) return false;
+      const now = new Date();
+      const backendToday = now.getDay() === 0 ? 7 : now.getDay();
+      if (!deviceSchedule.dias_operacion.includes(backendToday)) return false;
+
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const [startH, startM] = deviceSchedule.hora_encendido.split(':').map(Number);
+      const startMinutes = startH * 60 + startM;
+      
+      const [endH, endM] = deviceSchedule.hora_apagado.split(':').map(Number);
+      const endMinutes = endH * 60 + endM;
+
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    };
+
+    if (isCurrentlyInSchedule()) {
+      Alert.alert(
+        "Automatización Activa",
+        "El dispositivo está operando dentro del horario establecido. ¿Le gustaría apagarlo de todos modos? Esto deshabilitará la automatización aunque preservará tu horario.",
+        [
+          { text: "No", style: "cancel" },
+          { 
+            text: "Sí, controlar manualmente", 
+            style: "destructive", 
+            onPress: async () => {
+              // Add override log
+              addLog({
+                type: 'USER_ACTION',
+                title: 'Horario Anulado',
+                message: `${userName || 'El usuario'} anuló manualmente el horario de operación de ${deviceName}.`,
+                device_id: id,
+                device_name: deviceName,
+              });
+              await executePowerToggle(newState, true);
+            }
+          }
+        ]
+      );
+      return;
+    }
+    await executePowerToggle(newState, false);
+  };
+
+  const executePowerToggle = async (newState: boolean, override: boolean) => {
     setIsSendingCommand(true);
-    const success = await apiClient.setDeviceState(mac, newState);
-    setIsSendingCommand(false);
+    
+    try {
+      const success = await apiClient.setDeviceState(mac, newState, override);
+      setIsSendingCommand(false);
 
-    if (success) {
-      setIsOn(newState);
-      setIsSyncing(true);
-      // ── Log power toggle ──
-      addLog({
-        type: 'USER_ACTION',
-        title: newState ? 'Dispositivo Encendido' : 'Dispositivo Apagado',
-        message: `${userName || 'El usuario'} encendió/apagó remotamente ${deviceName} (${newState ? 'ON' : 'OFF'}) a través de la aplicación móvil.`,
-        device_id: id,
-        device_name: deviceName,
-      });
+      if (success) {
+        setIsOn(newState);
+        setIsSyncing(true);
+        if (override) {
+          setAutomatizacionActiva(false);
+        }
 
-      // Auto-resolve BMS alerts when user turns the device back ON
-      if (newState && activeBmsAlertsList.length > 0) {
-        Promise.all(activeBmsAlertsList.map(a => apiClient.resolveAlert(a.id))).then((results) => {
-          if (results.every(r => r)) {
+        // ── Log power toggle ──
+        addLog({
+          type: 'USER_ACTION',
+          title: newState ? 'Dispositivo Encendido' : 'Dispositivo Apagado',
+          message: `${userName || 'El usuario'} encendió/apagó remotamente ${deviceName} (${newState ? 'ON' : 'OFF'}) a través de la aplicación móvil.`,
+          device_id: id,
+          device_name: deviceName,
+        });
+
+        // Auto-resolve BMS alerts when user turns the device back ON
+        if (newState && activeBmsAlertsList.length > 0) {
+          let resolvedCount = 0;
+          for (const alert of activeBmsAlertsList) {
+            const ok = await apiClient.resolveAlert(alert.id);
+            if (ok) resolvedCount++;
+          }
+          if (resolvedCount > 0) {
             setActiveBmsAlert(null);
             setActiveBmsAlertsList([]);
             addLog({
-              type: 'USER_ACTION',
+              type: 'WARNING',
               title: 'Alertas BMS Resueltas',
-              message: `Las alertas BMS críticas fueron resueltas automáticamente al encender ${deviceName}.`,
+              message: `El usuario encendió ${deviceName}, resolviendo ${resolvedCount} alerta(s) pendiente(s).`,
               device_id: id,
               device_name: deviceName,
             });
           }
-        }).catch(() => { /* silent — next poll will retry */ });
+        }
+      } else {
+        addLog({ type: 'WARNING', title: 'Comando Fallido', message: `Fallo al encender/apagar ${deviceName}. El servidor no respondió.`, device_id: id, device_name: deviceName });
+        Alert.alert('Comando Fallido', 'No se pudo contactar al servidor. El estado del dispositivo no se cambió.');
       }
-    } else {
-      addLog({ type: 'WARNING', title: 'Comando Fallido', message: `Fallo al encender/apagar ${deviceName}. El servidor no respondió.`, device_id: id, device_name: deviceName });
-      Alert.alert('Comando Fallido', 'No se pudo contactar al servidor. El estado del dispositivo no se cambió.');
+    } catch (e) {
+      setIsSendingCommand(false);
+      console.error("Failed to execute power toggle", e);
     }
   };
 

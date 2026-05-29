@@ -5,7 +5,7 @@ import {
   refreshAsync,
 } from 'expo-auth-session';
 import { openAuthSessionAsync } from 'expo-web-browser';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './secureStore';
 import Constants from 'expo-constants';
 import { AuthTokens, AuthUser } from '../types/auth';
 

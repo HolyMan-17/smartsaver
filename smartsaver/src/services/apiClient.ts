@@ -11,6 +11,8 @@ import {
   UserSettingsResponse,
   UserSettingsUpdate,
   AIOverrideResponse,
+  HorarioUpdate,
+  HorarioResponse,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -151,11 +153,11 @@ export const apiClient = {
 
   // ─── Control Commands ───────────────────────────────────
 
-  setDeviceState: async (macDispositivo: string, encendido: boolean): Promise<boolean> => {
+  setDeviceState: async (macDispositivo: string, encendido: boolean, override_automation: boolean = false): Promise<boolean> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}/comando/estado`, {
         method: 'POST',
-        body: JSON.stringify({ encendido }),
+        body: JSON.stringify({ encendido, override_automation }),
       });
       return res.ok;
     } catch {
@@ -216,6 +218,34 @@ export const apiClient = {
   },
 
   getDevices,
+
+  // ─── Schedule (Horario) ──────────────────────────────────
+
+  getDeviceSchedule: async (mac: string): Promise<HorarioResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}/horario`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  updateDeviceSchedule: async (mac: string, schedule: HorarioUpdate): Promise<HorarioResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}/horario`, {
+        method: 'PUT',
+        body: JSON.stringify(schedule),
+      });
+      if (!res.ok) {
+        const apiError = await parseApiError(res);
+        throw new Error(apiError?.message || `HTTP ${res.status}`);
+      }
+      return res.json();
+    } catch (error) {
+      throw error;
+    }
+  },
 
   // ─── Alerts ─────────────────────────────────────────────
 

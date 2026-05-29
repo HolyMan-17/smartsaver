@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Alert, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NotificationService } from '../../services/notificationService';
+import { apiClient } from '../../services/apiClient';
 import { getStyles } from './ScheduleScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { CustomSwitch } from '../../../components/ui/CustomSwitch';
@@ -13,9 +14,39 @@ import { useUserStore } from '../../store/useUserStore';
 
 const DAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const HOURS = Array.from({ length: 12 }, (_, i) => (i + 1).toString());
+const MINUTES = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
+
+const mapDayToBackend = (dayIndex: number): number => {
+  return dayIndex === 0 ? 7 : dayIndex; // 0=Dom -> 7, 1=Lun -> 1
+};
+
+const mapDayFromBackend = (dayIndex: number): number => {
+  return dayIndex === 7 ? 0 : dayIndex; // 7=Dom -> 0, 1=Lun -> 1
+};
+
+const formatTimeForBackend = (hourStr: string, minStr: string, period: string): string => {
+  let h = parseInt(hourStr, 10);
+  if (period === 'PM' && h !== 12) h += 12;
+  if (period === 'AM' && h === 12) h = 0;
+  const hh = h.toString().padStart(2, '0');
+  return `${hh}:${minStr}:00`;
+};
+
+const parseTimeFromBackend = (timeStr: string | null, isEnd: boolean) => {
+  if (!timeStr) {
+    if (isEnd) return { hour: '6', min: '00', period: 'PM' };
+    return { hour: '8', min: '00', period: 'AM' };
+  }
+  const [hh, mm] = timeStr.split(':');
+  let h = parseInt(hh, 10);
+  const period = h >= 12 ? 'PM' : 'AM';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return { hour: h.toString(), min: mm, period };
+};
 
 export const ScheduleScreen = () => {
-  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
+  const { id, mac, name } = useLocalSearchParams<{ id: string; mac: string; name?: string }>();
   const addLog = useEventLogStore((s) => s.addLog);
   const userName = useUserStore((s) => s.userName);
   
@@ -30,8 +61,10 @@ export const ScheduleScreen = () => {
   // Schedule state
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]); 
   const [startHour, setStartHour] = useState('8');
+  const [startMinute, setStartMinute] = useState('00');
   const [startPeriod, setStartPeriod] = useState('AM');
   const [endHour, setEndHour] = useState('6');
+  const [endMinute, setEndMinute] = useState('00');
   const [endPeriod, setEndPeriod] = useState('PM');
 
   const [isSaving, setIsSaving] = useState(false);
@@ -39,7 +72,6 @@ export const ScheduleScreen = () => {
   const handleToggleAutomation = async (value: boolean) => {
     try {
       setAutomationEnabled(value);
-      await AsyncStorage.setItem(`@automation_enabled_${id}`, JSON.stringify(value));
       
       const deviceName = name || 'Dispositivo';
       // Log user action in event logs
@@ -56,11 +88,76 @@ export const ScheduleScreen = () => {
     }
   };
 
-  // Time modal selection state
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [activeTimeField, setActiveTimeField] = useState<'start' | 'end'>('start');
   const [tempHour, setTempHour] = useState('8');
+  const [tempMinute, setTempMinute] = useState('00');
   const [tempPeriod, setTempPeriod] = useState('AM');
+
+  const hourScrollRef = useRef<ScrollView>(null);
+  const minuteScrollRef = useRef<ScrollView>(null);
+  const periodScrollRef = useRef<ScrollView>(null);
+
+  const selectHourFromItem = (index: number) => {
+    setTempHour(HOURS[index]);
+    hourScrollRef.current?.scrollTo({ y: index * 60, animated: true });
+  };
+
+  const selectMinuteFromItem = (index: number) => {
+    setTempMinute(MINUTES[index]);
+    minuteScrollRef.current?.scrollTo({ y: index * 60, animated: true });
+  };
+
+  const selectPeriodFromItem = (index: number) => {
+    const period = index === 0 ? 'AM' : 'PM';
+    setTempPeriod(period);
+    periodScrollRef.current?.scrollTo({ y: index * 60, animated: true });
+  };
+
+  const handleHourScroll = (event: any) => {
+    const y = event.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(HOURS.length - 1, Math.round(y / 60)));
+    const val = HOURS[index];
+    if (val && val !== tempHour) {
+      setTempHour(val);
+    }
+  };
+
+  const handleMinuteScroll = (event: any) => {
+    const y = event.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(MINUTES.length - 1, Math.round(y / 60)));
+    const val = MINUTES[index];
+    if (val && val !== tempMinute) {
+      setTempMinute(val);
+    }
+  };
+
+  const handlePeriodScroll = (event: any) => {
+    const y = event.nativeEvent.contentOffset.y;
+    const index = Math.max(0, Math.min(1, Math.round(y / 60)));
+    const val = index === 0 ? 'AM' : 'PM';
+    if (val && val !== tempPeriod) {
+      setTempPeriod(val);
+    }
+  };
+
+  // Sync scroll positions when modal opens
+  useEffect(() => {
+    if (showTimeModal) {
+      setTimeout(() => {
+        const hourIdx = HOURS.indexOf(tempHour);
+        if (hourIdx !== -1) {
+          hourScrollRef.current?.scrollTo({ y: hourIdx * 60, animated: false });
+        }
+        const minIdx = MINUTES.indexOf(tempMinute);
+        if (minIdx !== -1) {
+          minuteScrollRef.current?.scrollTo({ y: minIdx * 60, animated: false });
+        }
+        const periodIdx = tempPeriod === 'AM' ? 0 : 1;
+        periodScrollRef.current?.scrollTo({ y: periodIdx * 60, animated: false });
+      }, 80);
+    }
+  }, [showTimeModal]);
 
   useEffect(() => {
     loadSchedule();
@@ -69,46 +166,81 @@ export const ScheduleScreen = () => {
 
   const loadSchedule = async () => {
     try {
-      const stored = await AsyncStorage.getItem(`@schedule_${id}`);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.selectedDays) setSelectedDays(parsed.selectedDays);
-        if (parsed.startHour) setStartHour(parsed.startHour);
-        if (parsed.startPeriod) setStartPeriod(parsed.startPeriod);
-        if (parsed.endHour) setEndHour(parsed.endHour);
-        if (parsed.endPeriod) setEndPeriod(parsed.endPeriod);
-      }
+      if (!mac) return;
+      const schedule = await apiClient.getDeviceSchedule(mac);
+      if (schedule) {
+        setAutomationEnabled(schedule.automatizacion_activa);
+        setSelectedDays(schedule.dias_operacion.map(mapDayFromBackend).sort());
+        
+        const start = parseTimeFromBackend(schedule.hora_encendido, false);
+        setStartHour(start.hour);
+        setStartMinute(start.min);
+        setStartPeriod(start.period);
 
-      // Retrieve device automation setting
-      const autoStored = await AsyncStorage.getItem(`@automation_enabled_${id}`);
-      if (autoStored !== null) {
-        setAutomationEnabled(JSON.parse(autoStored));
-      } else {
-        setAutomationEnabled(true);
+        const end = parseTimeFromBackend(schedule.hora_apagado, true);
+        setEndHour(end.hour);
+        setEndMinute(end.min);
+        setEndPeriod(end.period);
       }
     } catch (e) {
-      console.error("Failed to load schedule", e);
+      console.error("Failed to load schedule from API", e);
     }
   };
 
   const saveSchedule = async () => {
+    if (selectedDays.length === 0) {
+      Alert.alert("Días requeridos", "Debes seleccionar al menos un día de la semana para activar el horario.");
+      return;
+    }
+    
     setIsSaving(true);
     try {
-      const scheduleData = { 
-        isActive: automationEnabled, // backward compatibility
-        selectedDays, 
-        startHour, 
-        startPeriod, 
-        endHour, 
-        endPeriod 
+      const parseToMinutes = (h: string, m: string, p: string) => {
+        let hours = parseInt(h, 10);
+        if (hours === 12) hours = p === 'AM' ? 0 : 12;
+        else if (p === 'PM') hours += 12;
+        return hours * 60 + parseInt(m, 10);
       };
-      await AsyncStorage.setItem(`@schedule_${id}`, JSON.stringify(scheduleData));
+
+      const startTotal = parseToMinutes(startHour, startMinute, startPeriod);
+      const endTotal = parseToMinutes(endHour, endMinute, endPeriod);
+
+      if (startTotal >= endTotal) {
+        setIsSaving(false);
+        Alert.alert("Horario Inválido", "La hora de inicio debe ser estrictamente anterior a la hora de apagado.");
+        return;
+      }
+
+      const backendDays = selectedDays.map(mapDayToBackend);
+      const hora_encendido = formatTimeForBackend(startHour, startMinute, startPeriod);
+      const hora_apagado = formatTimeForBackend(endHour, endMinute, endPeriod);
+
+      const payload = {
+        dias_operacion: backendDays,
+        hora_encendido,
+        hora_apagado,
+        automatizacion_activa: automationEnabled,
+      };
+
+      if (!mac) throw new Error("Falta la dirección MAC del dispositivo.");
+
+      const res = await apiClient.updateDeviceSchedule(mac, payload);
       
-      Alert.alert("Éxito", "Horario de operación guardado localmente.");
-      router.back();
-    } catch (e) {
-      console.error("Failed to save schedule", e);
-      Alert.alert("Error", "Fallo al guardar el horario.");
+      if (res) {
+        Alert.alert("Éxito", "Horario de operación guardado en el servidor.");
+        if (automationEnabled) {
+          NotificationService.sendNotification(
+            "Horario Configurado",
+            `El dispositivo "${name || mac}" operará de ${startHour}:${startMinute} ${startPeriod} a ${endHour}:${endMinute} ${endPeriod}.`
+          );
+        }
+        router.back();
+      } else {
+        Alert.alert("Error", "Fallo al guardar el horario.");
+      }
+    } catch (e: any) {
+      console.error("Failed to save schedule to API", e);
+      Alert.alert("Error", e.message || "Ocurrió un error al guardar el horario.");
     } finally {
       setIsSaving(false);
     }
@@ -126,9 +258,11 @@ export const ScheduleScreen = () => {
     setActiveTimeField(field);
     if (field === 'start') {
       setTempHour(startHour);
+      setTempMinute(startMinute);
       setTempPeriod(startPeriod);
     } else {
       setTempHour(endHour);
+      setTempMinute(endMinute);
       setTempPeriod(endPeriod);
     }
     setShowTimeModal(true);
@@ -137,9 +271,11 @@ export const ScheduleScreen = () => {
   const confirmTimeSelection = () => {
     if (activeTimeField === 'start') {
       setStartHour(tempHour);
+      setStartMinute(tempMinute);
       setStartPeriod(tempPeriod);
     } else {
       setEndHour(tempHour);
+      setEndMinute(tempMinute);
       setEndPeriod(tempPeriod);
     }
     setShowTimeModal(false);
@@ -218,7 +354,7 @@ export const ScheduleScreen = () => {
               <Text style={styles.timeCardLabel}>Hora de Encendido</Text>
               <View style={styles.timeValueContainer}>
                 <Feather name="clock" size={16} color="#3B82F6" style={{ marginRight: 6 }} />
-                <Text style={styles.timeCardValue}>{`${startHour}:00`}</Text>
+                <Text style={styles.timeCardValue}>{`${startHour}:${startMinute}`}</Text>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#3B82F6' }}>{startPeriod}</Text>
               </View>
             </TouchableOpacity>
@@ -234,7 +370,7 @@ export const ScheduleScreen = () => {
               <Text style={styles.timeCardLabel}>Hora de Apagado</Text>
               <View style={styles.timeValueContainer}>
                 <Feather name="clock" size={16} color="#EF4444" style={{ marginRight: 6 }} />
-                <Text style={styles.timeCardValue}>{`${endHour}:00`}</Text>
+                <Text style={styles.timeCardValue}>{`${endHour}:${endMinute}`}</Text>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#EF4444' }}>{endPeriod}</Text>
               </View>
             </TouchableOpacity>
@@ -259,7 +395,7 @@ export const ScheduleScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* ── TIME PICKER MODAL (GRID HOUR SELECTOR 1-12 + AM/PM PILLS) ── */}
+      {/* ── TIME PICKER MODAL (WHEEL ROLLING SELECTOR) ── */}
       <Modal
         visible={showTimeModal}
         animationType="fade"
@@ -280,50 +416,123 @@ export const ScheduleScreen = () => {
             
             <Text style={styles.modalSubtitle}>
               {activeTimeField === 'start' 
-                ? 'Selecciona la hora de encendido programado.' 
-                : 'Selecciona la hora de apagado programado.'}
+                ? 'Desliza las ruedas para programar la hora de encendido.' 
+                : 'Desliza las ruedas para programar la hora de apagado.'}
             </Text>
             
-            {/* Period Toggle Switch (AM/PM) */}
-            <View style={styles.periodContainer}>
-              <TouchableOpacity 
-                style={[styles.periodButton, tempPeriod === 'AM' && styles.periodButtonActive]}
-                onPress={() => setTempPeriod('AM')}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.periodButtonText, tempPeriod === 'AM' && styles.periodButtonTextActive]}>
-                  AM
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.periodButton, tempPeriod === 'PM' && styles.periodButtonActive]}
-                onPress={() => setTempPeriod('PM')}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.periodButtonText, tempPeriod === 'PM' && styles.periodButtonTextActive]}>
-                  PM
-                </Text>
-              </TouchableOpacity>
-            </View>
-            
-            {/* Hours Grid (1 to 12) */}
-            <View style={styles.gridContainer}>
-              {HOURS.map((h) => {
-                const isActiveHour = tempHour === h;
-                return (
-                  <TouchableOpacity
-                    key={h}
-                    style={[styles.gridItem, isActiveHour && styles.gridItemActive]}
-                    onPress={() => setTempHour(h)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.gridItemText, isActiveHour && styles.gridItemTextActive]}>
-                      {h}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+            {/* Wheel Pickers Row */}
+            <View style={styles.wheelPickerContainer}>
+              {/* Highlight selection bar overlay */}
+              <View style={styles.wheelSelectionIndicator} pointerEvents="none" />
+
+              {/* HOURS WHEEL */}
+              <View style={styles.wheelColumn}>
+                <Text style={styles.wheelColumnLabel}>Hora</Text>
+                <ScrollView
+                  ref={hourScrollRef}
+                  style={styles.wheelScrollView}
+                  snapToInterval={Platform.OS === 'web' ? undefined : 60}
+                  decelerationRate="fast"
+                  showsVerticalScrollIndicator={false}
+                  onMomentumScrollEnd={handleHourScroll}
+                  onScroll={handleHourScroll}
+                  scrollEventThrottle={16}
+                >
+                  <View style={styles.wheelItem} /> {/* Top Spacer */}
+                  {HOURS.map((h, idx) => {
+                    const isSelected = tempHour === h;
+                    return (
+                      <TouchableOpacity
+                        key={h}
+                        style={styles.wheelItem}
+                        onPress={() => selectHourFromItem(idx)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.wheelItemText, isSelected && styles.wheelItemTextSelected]}>
+                          {h}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <View style={styles.wheelItem} /> {/* Bottom Spacer */}
+                </ScrollView>
+              </View>
+
+              {/* Separator / Colon */}
+              <View style={styles.wheelSeparator}>
+                <Text style={styles.wheelSeparatorText}>:</Text>
+              </View>
+
+              {/* MINUTE WHEEL */}
+              <View style={styles.wheelColumn}>
+                <Text style={styles.wheelColumnLabel}>Min</Text>
+                <ScrollView
+                  ref={minuteScrollRef}
+                  style={styles.wheelScrollView}
+                  snapToInterval={Platform.OS === 'web' ? undefined : 60}
+                  decelerationRate="fast"
+                  showsVerticalScrollIndicator={false}
+                  onMomentumScrollEnd={handleMinuteScroll}
+                  onScroll={handleMinuteScroll}
+                  scrollEventThrottle={16}
+                >
+                  <View style={styles.wheelItem} /> {/* Top Spacer */}
+                  {MINUTES.map((m, idx) => {
+                    const isSelected = tempMinute === m;
+                    return (
+                      <TouchableOpacity
+                        key={m}
+                        style={styles.wheelItem}
+                        onPress={() => selectMinuteFromItem(idx)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.wheelItemText, isSelected && styles.wheelItemTextSelected]}>
+                          {m}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <View style={styles.wheelItem} /> {/* Bottom Spacer */}
+                </ScrollView>
+              </View>
+
+              {/* Separator */}
+              <View style={styles.wheelSeparator}>
+                <Text style={styles.wheelSeparatorText}> </Text>
+              </View>
+
+              {/* AM/PM WHEEL */}
+              <View style={styles.wheelColumn}>
+                <Text style={styles.wheelColumnLabel}>Período</Text>
+                <ScrollView
+                  ref={periodScrollRef}
+                  style={styles.wheelScrollView}
+                  snapToInterval={Platform.OS === 'web' ? undefined : 60}
+                  decelerationRate="fast"
+                  showsVerticalScrollIndicator={false}
+                  onMomentumScrollEnd={handlePeriodScroll}
+                  onScroll={handlePeriodScroll}
+                  scrollEventThrottle={16}
+                >
+                  <View style={styles.wheelItem} /> {/* Top Spacer */}
+                  {['AM', 'PM'].map((p, idx) => {
+                    const isSelected = tempPeriod === p;
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        style={styles.wheelItem}
+                        onPress={() => selectPeriodFromItem(idx)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.wheelItemText, isSelected && styles.wheelItemTextSelected]}>
+                          {p}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <View style={styles.wheelItem} /> {/* Bottom Spacer */}
+                </ScrollView>
+              </View>
             </View>
             
             {/* Modal Buttons Footer */}
