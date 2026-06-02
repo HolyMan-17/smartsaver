@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { styles } from './DeviceDetailScreen.styles';
+import { getStyles } from './DeviceDetailScreen.styles';
+import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { apiClient } from '../../services/apiClient';
 import { DispositivoLimitesCommand, AlertaResponse } from '../../types/api';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
 import { sendLocalNotification } from '../../utils/notifications';
+import { useTelemetryStore } from '../../store/useTelemetryStore';
 
 type Zone = 'Safe' | 'Warning' | 'Critical';
 
@@ -20,6 +22,20 @@ const classifyZone = (watts: number): Zone => {
 };
 
 export const DeviceDetailScreen = () => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
+  const styles = getStyles(colors, isDark);
+
+  // Dynamic themed aliases to avoid rewriting 100+ JSX style references
+  const localStyles = styles;
+  const modalStyles = {
+    ...styles,
+    container: styles.modalContainer,
+    header: styles.modalHeader,
+    title: styles.modalTitle,
+    subtitle: styles.modalSubtitle,
+  };
+
   const { id, mac, name } = useLocalSearchParams<{ id: string; mac: string; name: string }>();
   const addLog = useEventLogStore((s) => s.addLog);
   const userName = useUserStore((s) => s.userName);
@@ -222,7 +238,7 @@ export const DeviceDetailScreen = () => {
       // ── Log AI zone transitions (no push notifications — informational only) ──
       if (prevZone.current !== null && prevZone.current !== newZone) {
         if (newZone === 'Warning') {
-          const msg = `El consumo de energía alcanzó ${latest.potencia.toFixed(1)}W. La zona cambió de ${prevZone.current === 'Safe' ? 'Seguro' : 'Crítico'} a Alerta.`;
+          const msg = `El consumo de energía alcanzó ${latest.potencia.toFixed(1)}W. La zona cambió de ${prevZone.current === 'Safe' ? 'Seguro' : 'Crítico'} a Riesgo.`;
           addLog({ type: 'WARNING', title: 'Alto Consumo Detectado', message: msg, device_id: id, device_name: deviceName });
         } else if (newZone === 'Critical') {
           const msg = `El consumo de energía se disparó a ${latest.potencia.toFixed(1)}W. La IA marcó el dispositivo como CRÍTICO.`;
@@ -417,11 +433,17 @@ export const DeviceDetailScreen = () => {
       setIsSendingCommand(false);
 
       if (success) {
+        try {
+          useTelemetryStore.getState().recordManualToggle(mac);
+        } catch (e) {
+          console.warn('Failed to record manual toggle:', e);
+        }
         setIsOn(newState);
         setIsSyncing(true);
         if (override) {
           setAutomatizacionActiva(false);
         }
+
 
         // ── Log power toggle ──
         addLog({
@@ -713,7 +735,7 @@ export const DeviceDetailScreen = () => {
       {/* --- HEADER --- */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Feather name="arrow-left" size={24} color="#0F172A" />
+          <Feather name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginRight: 8 }}>
           <Text style={styles.headerTitle} numberOfLines={1}>Panel</Text>
@@ -725,7 +747,7 @@ export const DeviceDetailScreen = () => {
             style={{ flexDirection: 'row', alignItems: 'center' }}
           >
             <Text style={styles.headerSubtitle} numberOfLines={1}>{deviceName}</Text>
-            <Feather name="edit-2" size={14} color="#64748B" style={{ marginLeft: 6 }} />
+            <Feather name="edit-2" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
           </TouchableOpacity>
         </View>
         {/* ── NETWORK STATUS INDICATOR ── */}
@@ -759,21 +781,21 @@ export const DeviceDetailScreen = () => {
               paddingVertical: 8, 
               paddingHorizontal: 12, 
               borderRadius: 20, 
-              backgroundColor: '#FFFFFF',
+              backgroundColor: colors.card,
               shadowColor: '#64748B',
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.05,
               shadowRadius: 4,
               elevation: 2,
               borderWidth: 1,
-              borderColor: '#E2E8F0',
+              borderColor: colors.borderSoft,
               opacity: isOnline ? 1 : 0.5 
             }}
             activeOpacity={0.7}
             disabled={!isOnline}
           >
-            <Feather name="sliders" size={14} color="#0F172A" style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 12, fontWeight: '700', color: '#0F172A' }}>Límites de Seguridad</Text>
+            <Feather name="sliders" size={14} color={colors.text} style={{ marginRight: 6 }} />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>Límites de Seguridad</Text>
           </TouchableOpacity>
         </View>
 
@@ -895,7 +917,7 @@ export const DeviceDetailScreen = () => {
                   styles.zoneText, 
                   { color: activeBmsAlert ? '#EF4444' : (isOn && isOnline ? zoneColor : '#94A3B8') }
                 ]}>
-                  {activeBmsAlert ? 'CRÍTICO' : (!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'ALERTA' : 'CRÍTICO') : 'EN ESPERA')}
+                  {activeBmsAlert ? 'CRÍTICO' : (!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'RIESGO' : 'CRÍTICO') : 'EN ESPERA')}
                 </Text>
               </View>
             </View>
@@ -1421,342 +1443,3 @@ export const DeviceDetailScreen = () => {
     </SafeAreaView>
   );
 };
-
-const localStyles = StyleSheet.create({
-  priorityCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  priorityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  priorityTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginLeft: 8,
-  },
-  priorityDesc: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  prioritySelectorContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  priorityButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  priorityButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  legacyWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 14,
-  },
-  legacyWarningText: {
-    fontSize: 11,
-    color: '#B45309',
-    fontWeight: '600',
-    flex: 1,
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  offlineBanner: {
-    backgroundColor: '#EF4444',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
-  },
-  offlineBannerText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  priorityDivider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 14,
-  },
-  scheduleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  scheduleRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  scheduleRowText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-});
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  container: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 34,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 16,
-    lineHeight: 18,
-  },
-  limitCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 12,
-    width: '100%',
-  },
-  limitRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  limitInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  limitLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
-    marginLeft: 8,
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 2,
-  },
-  stepperBtn: {
-    padding: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepperInput: {
-    width: 44,
-    textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-    paddingVertical: 2,
-  },
-  stepperValueBtn: {
-    width: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  stepperValueText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-  centeredOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  centeredContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    width: '100%',
-    maxWidth: 320,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  popupInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
-  popupInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  popupUnit: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginLeft: 8,
-  },
-  stepperUnit: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#94A3B8',
-    marginRight: 6,
-  },
-  meterContainer: {
-    marginTop: 4,
-  },
-  meterLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  meterText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  meterTrack: {
-    height: 6,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  meterFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  presetsContainer: {
-    marginVertical: 10,
-  },
-  presetsTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  presetsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  presetPill: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  presetText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  input: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#0F172A',
-    marginBottom: 16,
-  },
-  saveButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-});

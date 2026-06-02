@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { styles } from './DevicesScreen.styles';
+import { getStyles } from './DevicesScreen.styles';
+import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { apiClient } from '../../services/apiClient';
 import { TelemetriaResponse } from '../../types/api';
 
@@ -16,6 +17,9 @@ interface DeviceNode {
   watts: number;
   zone: 'Safe' | 'Warning' | 'Critical';
   aiStatus: number;
+  isOnline: boolean;
+  isOn: boolean;
+  isSyncing: boolean;
 }
 
 // Fallback device registry — used only when API is unavailable
@@ -30,6 +34,10 @@ const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
 };
 
 export const DevicesScreen = () => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
+  const styles = getStyles(colors);
+
   const [devices, setDevices] = useState<DeviceNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingDevice, setEditingDevice] = useState<DeviceNode | null>(null);
@@ -59,6 +67,9 @@ export const DevicesScreen = () => {
               watts: latest?.potencia ?? 0,
               zone: latest ? classifyZone(latest.potencia) : 'Safe',
               aiStatus: latest?.ai_status ?? 0,
+              isOnline: device.is_online,
+              isOn: device.estado_reportado,
+              isSyncing: device.estado_deseado !== device.estado_reportado,
             });
           } catch {
             results.push({
@@ -70,6 +81,9 @@ export const DevicesScreen = () => {
               watts: 0,
               zone: 'Safe',
               aiStatus: 0,
+              isOnline: device.is_online,
+              isOn: device.estado_reportado,
+              isSyncing: device.estado_deseado !== device.estado_reportado,
             });
           }
         }
@@ -96,6 +110,9 @@ export const DevicesScreen = () => {
             watts: latest.potencia,
             zone: classifyZone(latest.potencia),
             aiStatus: latest.ai_status ?? 0,
+            isOnline: true,
+            isOn: true,
+            isSyncing: false,
           });
         } else {
           results.push({
@@ -107,6 +124,9 @@ export const DevicesScreen = () => {
             watts: 0,
             zone: 'Safe',
             aiStatus: 0,
+            isOnline: false,
+            isOn: false,
+            isSyncing: false,
           });
         }
       } catch {
@@ -119,6 +139,9 @@ export const DevicesScreen = () => {
           watts: 0,
           zone: 'Safe',
           aiStatus: 0,
+          isOnline: false,
+          isOn: false,
+          isSyncing: false,
         });
       }
     }
@@ -213,8 +236,14 @@ export const DevicesScreen = () => {
     setEditName(device.name === device.mac ? '' : device.name);
   };
 
-  const getAiStatusDetails = (status: number) => {
-    switch (status) {
+  const getAiStatusDetails = (item: DeviceNode) => {
+    if (!item.isOnline) {
+      return { label: 'IA: SIN SEÑAL', color: '#94A3B8', bg: '#F1F5F9' };
+    }
+    if (!item.isOn) {
+      return { label: 'IA: EN ESPERA', color: '#94A3B8', bg: '#F1F5F9' };
+    }
+    switch (item.aiStatus) {
       case 1:
         return { label: 'IA: RIESGO', color: '#D97706', bg: '#FEF3C7' };
       case 2:
@@ -225,9 +254,33 @@ export const DevicesScreen = () => {
     }
   };
 
+  const getPhysicalStatus = (item: DeviceNode) => {
+    if (!item.isOnline) {
+      return { label: 'SIN SEÑAL', color: '#EF4444', dotColor: '#EF4444' };
+    }
+    if (item.isSyncing) {
+      return { label: 'SINCRONIZANDO...', color: '#F59E0B', dotColor: '#F59E0B' };
+    }
+    if (!item.isOn) {
+      return { label: 'EN ESPERA', color: '#64748B', dotColor: '#64748B' };
+    }
+    return { label: 'CONECTADO', color: '#10B981', dotColor: '#10B981' };
+  };
+
+  const getIconStyles = (item: DeviceNode) => {
+    if (!item.isOnline) {
+      return { color: '#94A3B8', bg: '#F1F5F9' };
+    }
+    if (!item.isOn) {
+      return { color: '#64748B', bg: '#F1F5F9' };
+    }
+    return getZoneStyles(item.zone);
+  };
+
   const renderItem = ({ item }: { item: DeviceNode }) => {
-    const zoneStyle = getZoneStyles(item.zone);
-    const aiDetails = getAiStatusDetails(item.aiStatus);
+    const iconStyle = getIconStyles(item);
+    const physicalStatus = getPhysicalStatus(item);
+    const aiDetails = getAiStatusDetails(item);
 
     return (
       <TouchableOpacity 
@@ -237,8 +290,8 @@ export const DevicesScreen = () => {
         activeOpacity={0.7}
         delayLongPress={500}
       >
-        <View style={[styles.deviceIconContainer, { backgroundColor: zoneStyle.bg }]}>
-          <Feather name="cpu" size={24} color={zoneStyle.color} />
+        <View style={[styles.deviceIconContainer, { backgroundColor: iconStyle.bg }]}>
+          <Feather name="cpu" size={24} color={iconStyle.color} />
         </View>
         
         <View style={styles.deviceInfo}>
@@ -247,12 +300,14 @@ export const DevicesScreen = () => {
             <Text style={styles.deviceMac}>{item.mac}</Text>
           )}
           <View style={styles.deviceMeta}>
-            <View style={[styles.statusDot, { backgroundColor: zoneStyle.color }]} />
-            <Text style={[styles.statusText, { color: zoneStyle.color }]}>
-              {item.zone === 'Safe' ? 'Seguro' : item.zone === 'Warning' ? 'Alerta' : 'Crítico'}
+            <View style={[styles.statusDot, { backgroundColor: physicalStatus.dotColor }]} />
+            <Text style={[styles.statusText, { color: physicalStatus.color }]}>
+              {physicalStatus.label}
             </Text>
             <Text style={styles.deviceMetaText}>
-              {item.voltage.toFixed(1)}V • {item.watts.toFixed(1)}W
+              {item.isOnline && item.isOn 
+                ? `${item.voltage.toFixed(1)}V • ${item.watts.toFixed(1)}W`
+                : '— V • — W'}
             </Text>
           </View>
           
@@ -306,15 +361,15 @@ export const DevicesScreen = () => {
         </View>
         <Text style={styles.headerTitle}>Dispositivos Activos</Text>
         <Text style={styles.headerSubtitle}>
-          Sensores enlazados vía Nodos LoRa (ESP32-C3)
+          Lista de dispositivos conectados al sistema
         </Text>
       </View>
 
       {/* Segment Selector for Priority Filter */}
       {showFilter && (
-        <View style={localStyles.filterWrapper}>
-          <Text style={localStyles.filterLabel}>Filtrar por Prioridad</Text>
-          <View style={localStyles.filterContainer}>
+        <View style={styles.filterWrapper}>
+          <Text style={styles.filterLabel}>Filtrar por Prioridad</Text>
+          <View style={styles.filterContainer}>
             {(['ALL', 'P1', 'P2', 'P3'] as const).map((filterOpt) => {
               const label = filterOpt === 'ALL' ? 'Todos' : filterOpt;
               const isSelected = selectedFilter === filterOpt;
@@ -323,14 +378,14 @@ export const DevicesScreen = () => {
                 <TouchableOpacity
                   key={filterOpt}
                   style={[
-                    localStyles.filterButton,
+                    styles.filterButton,
                     isSelected && { backgroundColor: activeColor, borderColor: activeColor }
                   ]}
                   onPress={() => setSelectedFilter(filterOpt)}
                   activeOpacity={0.7}
                 >
                   <Text style={[
-                    localStyles.filterButtonText,
+                    styles.filterButtonText,
                     { color: '#3B82F6', fontWeight: filterOpt === 'ALL' ? '600' : '700' },
                     isSelected && { color: '#FFFFFF', fontWeight: '800' }
                   ]}>
@@ -367,15 +422,15 @@ export const DevicesScreen = () => {
           setEditName('');
         }}
       >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.content}>
-            <Text style={modalStyles.title}>Editar Nombre</Text>
-            <Text style={modalStyles.subtitle}>
+        <View style={styles.overlay}>
+          <View style={styles.content}>
+            <Text style={styles.title}>Editar Nombre</Text>
+            <Text style={styles.subtitle}>
               {editingDevice?.mac}
             </Text>
             
             <TextInput
-              style={modalStyles.input}
+              style={styles.input}
               value={editName}
               onChangeText={setEditName}
               placeholder="Nombre personalizado"
@@ -384,33 +439,33 @@ export const DevicesScreen = () => {
               maxLength={50}
             />
             
-            <View style={modalStyles.buttonRow}>
+            <View style={styles.buttonRow}>
               <TouchableOpacity 
-                style={[modalStyles.button, modalStyles.cancelButton]}
+                style={[styles.button, styles.cancelButton]}
                 onPress={() => {
                   setEditingDevice(null);
                   setEditName('');
                 }}
               >
-                <Text style={modalStyles.cancelText}>Cancelar</Text>
+                <Text style={styles.cancelText}>Cancelar</Text>
               </TouchableOpacity>
               
               {editingDevice && editingDevice.name !== editingDevice.mac && (
                 <TouchableOpacity 
-                  style={[modalStyles.button, modalStyles.clearButton]}
+                  style={[styles.button, styles.clearButton]}
                   onPress={handleClearName}
                   disabled={isSaving}
                 >
-                  <Text style={modalStyles.clearText}>Eliminar</Text>
+                  <Text style={styles.clearText}>Eliminar</Text>
                 </TouchableOpacity>
               )}
               
               <TouchableOpacity 
-                style={[modalStyles.button, modalStyles.saveButton, isSaving && modalStyles.disabledButton]}
+                style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
                 onPress={handleSaveName}
                 disabled={isSaving}
               >
-                <Text style={modalStyles.saveText}>
+                <Text style={styles.saveText}>
                   {isSaving ? 'Guardando...' : 'Guardar'}
                 </Text>
               </TouchableOpacity>
@@ -421,125 +476,3 @@ export const DevicesScreen = () => {
     </SafeAreaView>
   );
 };
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  content: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 20,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#0F172A',
-    marginBottom: 20,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#F1F5F9',
-  },
-  clearButton: {
-    backgroundColor: '#FEF2F2',
-  },
-  saveButton: {
-    backgroundColor: '#3B82F6',
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  cancelText: {
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  clearText: {
-    color: '#EF4444',
-    fontWeight: '600',
-  },
-  saveText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-});
-
-const localStyles = StyleSheet.create({
-  filterWrapper: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 4,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#64748B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    textAlign: 'center',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    gap: 8,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-});

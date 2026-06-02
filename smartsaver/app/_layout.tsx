@@ -7,11 +7,11 @@ import * as WebBrowser from 'expo-web-browser';
 import 'react-native-reanimated';
 import { useEffect } from 'react';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { requestNotificationPermissions } from '../src/utils/notifications';
+import { useThemeStore, getColors } from '../src/store/useThemeStore';
+import { requestNotificationPermissions, getPushToken } from '../src/utils/notifications';
 import { useUserStore } from '../src/store/useUserStore';
 import { useAuthStore } from '../src/store/useAuthStore';
-import { setAccessTokenGetter } from '../src/services/apiClient';
+import apiClient, { setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
 import { useTelemetryStore } from '../src/store/useTelemetryStore';
 
@@ -28,7 +28,9 @@ LogBox.ignoreLogs([
 ]);
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
+
   const loadUser = useUserStore((state) => state.loadUser);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -38,7 +40,6 @@ export default function RootLayout() {
   const stopConnection = useTelemetryStore((state) => state.stopConnection);
 
   useEffect(() => {
-    requestNotificationPermissions();
     loadUser();
     rehydrate();
     setAccessTokenGetter(useAuthStore.getState().getAccessToken);
@@ -47,6 +48,22 @@ export default function RootLayout() {
   useEffect(() => {
     if (isAuthenticated) {
       startConnection();
+      
+      // Register Push Token with backend
+      (async () => {
+        try {
+          const granted = await requestNotificationPermissions();
+          if (granted) {
+            const token = await getPushToken();
+            if (token) {
+              await apiClient.updateUserSettings({ expo_push_token: token });
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to register push token:', e);
+        }
+      })();
+
     } else {
       stopConnection();
     }
@@ -55,7 +72,7 @@ export default function RootLayout() {
   if (isLoading) {
     return (
       <SafeAreaProvider>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
       </SafeAreaProvider>
@@ -72,13 +89,17 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ headerShown: false }}>
+      <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+        <Stack screenOptions={{ 
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background }
+        }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="onboarding" />
+          <Stack.Screen name="notifications" />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
         </Stack>
-        <StatusBar style="auto" />
+        <StatusBar style={isDark ? 'light' : 'dark'} />
       </ThemeProvider>
     </SafeAreaProvider>
   );

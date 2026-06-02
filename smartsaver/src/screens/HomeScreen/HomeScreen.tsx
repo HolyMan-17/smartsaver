@@ -9,12 +9,15 @@ import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useUserStore } from '../../store/useUserStore';
 import { apiClient } from '../../services/apiClient';
 import { DEVICE_REGISTRY } from '../DevicesScreen/DevicesScreen';
+import { useNotificationStore } from '../../store/useNotificationStore';
 
 export const HomeScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
   const userName = useUserStore((state) => state.userName);
   const colors = getColors(isDark);
   const styles = getStyles(colors);
+  
+  const unreadCount = useNotificationStore((state) => state.getUnreadCount());
 
   const [onlineNodes, setOnlineNodes] = useState(0);
   const [firstDeviceMac, setFirstDeviceMac] = useState<string | null>(null);
@@ -66,8 +69,19 @@ export const HomeScreen = () => {
             <Text style={styles.greetingText}>Bienvenido, {userName || 'Usuario'}</Text>
             <Text style={styles.titleText}>SmartSaver Hub</Text>
           </View>
-          <TouchableOpacity style={styles.notificationBadge}>
+          <TouchableOpacity 
+            style={styles.notificationBadge}
+            onPress={() => router.push('/notifications')}
+            activeOpacity={0.7}
+          >
             <Feather name="bell" size={22} color={colors.text} />
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 

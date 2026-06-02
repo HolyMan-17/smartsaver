@@ -7,7 +7,8 @@ import { LineChart, PieChart } from 'react-native-gifted-charts';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
-import { styles } from './AnalyticsScreen.styles';
+import { getStyles } from './AnalyticsScreen.styles';
+import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { apiClient } from '../../services/apiClient';
 import { TelemetriaResponse, DispositivoResponse, AgregadosResponse } from '../../types/api';
 
@@ -24,6 +25,8 @@ interface AnimatedLoaderProps {
 }
 
 const AnimatedLoader = ({ visible, color, text }: AnimatedLoaderProps) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
   const opacity = React.useRef(new Animated.Value(visible ? 1 : 0)).current;
   const [shouldRender, setShouldRender] = useState(visible);
 
@@ -56,7 +59,7 @@ const AnimatedLoader = ({ visible, color, text }: AnimatedLoaderProps) => {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.75)',
+        backgroundColor: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.75)',
         justifyContent: 'center',
         alignItems: 'center',
         borderRadius: 12,
@@ -65,7 +68,7 @@ const AnimatedLoader = ({ visible, color, text }: AnimatedLoaderProps) => {
       }}
     >
       <ActivityIndicator size="large" color={color} />
-      <Text style={{ color: '#475569', marginTop: 8, fontSize: 12, fontWeight: '600' }}>{text}</Text>
+      <Text style={{ color: colors.textSecondary, marginTop: 8, fontSize: 12, fontWeight: '600' }}>{text}</Text>
     </Animated.View>
   );
 };
@@ -121,6 +124,10 @@ const TIME_RANGE_LABELS: Record<TimeRange, string> = {
 };
 
 export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
+  const styles = getStyles(colors, isDark);
+
   // ─── Device selection ──────────────────────────────────────
   const [allDevices, setAllDevices] = useState<DispositivoResponse[]>([]);
   const [selectedMac, setSelectedMac] = useState<string | null>(mac || null);
@@ -564,13 +571,13 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
       {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Feather name="arrow-left" size={24} color="#0F172A" />
+          <Feather name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Analíticas</Text>
           <Text style={styles.headerSubtitle}>Datos Históricos de Consumo</Text>
         </View>
-        <TouchableOpacity onPress={fetchDeviceAnalytics} style={{ padding: 8, backgroundColor: '#EFF6FF', borderRadius: 8 }}>
+        <TouchableOpacity onPress={fetchDeviceAnalytics} style={{ padding: 8, backgroundColor: colors.infoBg, borderRadius: 8 }}>
           <Feather name="refresh-cw" size={20} color="#3B82F6" />
         </TouchableOpacity>
       </View>
@@ -592,7 +599,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               <Text style={styles.pickerSelectedText} numberOfLines={1}>
                 {selectedDeviceName}
               </Text>
-              <Feather name="chevron-down" size={20} color="#64748B" />
+              <Feather name="chevron-down" size={20} color={colors.textSecondary} />
             </View>
           </TouchableOpacity>
         )}
@@ -605,7 +612,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               <Text style={styles.pickerTitle}>Dispositivo</Text>
             </View>
             <View style={styles.singleDeviceRow}>
-              <Feather name="hard-drive" size={16} color="#64748B" />
+              <Feather name="hard-drive" size={16} color={colors.textSecondary} />
               <Text style={styles.singleDeviceName} numberOfLines={1}>
                 {allDevices[0]?.nombre_personalizado || allDevices[0]?.mac || 'Cargando...'}
               </Text>
@@ -688,10 +695,10 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                 initialSpacing={10}
                 spacing={Math.max(Math.floor((width - 120) / Math.max(lineValues.length, 1)), 5)}
                 hideRules
-                yAxisTextStyle={{ color: '#94A3B8', fontSize: 10 }}
-                xAxisLabelTextStyle={{ color: '#94A3B8', fontSize: 9 }}
-                yAxisColor="#E2E8F0"
-                xAxisColor="#E2E8F0"
+                yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
+                xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
+                yAxisColor={colors.borderSoft}
+                xAxisColor={colors.borderSoft}
                 dataPointsColor="#2563EB"
                 dataPointsRadius={3}
                 curved
@@ -700,8 +707,8 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               />
             ) : !isLoading ? (
               <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
-                <Feather name="inbox" size={32} color="#CBD5E1" />
-                <Text style={{ color: '#94A3B8', marginTop: 10, fontSize: 13 }}>Sin datos disponibles</Text>
+                <Feather name="inbox" size={32} color={colors.border} />
+                <Text style={{ color: colors.textSecondary, marginTop: 10, fontSize: 13 }}>Sin datos disponibles</Text>
               </View>
             ) : <View style={{ height: 180 }} />}
 
@@ -732,10 +739,10 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                     const totalPower = pieSlices.reduce((acc, slice) => acc + (slice.value <= 0.1 ? 0 : slice.value), 0);
                     return (
                       <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>
                           {totalPower.toFixed(1)}W
                         </Text>
-                        <Text style={{ fontSize: 9, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                           Total
                         </Text>
                       </View>
@@ -746,8 +753,8 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               </View>
             ) : !isPieLoading ? (
               <View style={{ height: 200, justifyContent: 'center', alignItems: 'center' }}>
-                <Feather name="inbox" size={32} color="#CBD5E1" />
-                <Text style={{ color: '#94A3B8', marginTop: 10, fontSize: 13 }}>Sin datos de dispositivos</Text>
+                <Feather name="inbox" size={32} color={colors.border} />
+                <Text style={{ color: colors.textSecondary, marginTop: 10, fontSize: 13 }}>Sin datos de dispositivos</Text>
               </View>
             ) : <View style={{ height: 200 }} />}
 
@@ -784,10 +791,10 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                 initialSpacing={10}
                 spacing={Math.max(Math.floor((width - 120) / Math.max(aggregates.length, 1)), 5)}
                 hideRules
-                yAxisTextStyle={{ color: '#94A3B8', fontSize: 10 }}
-                xAxisLabelTextStyle={{ color: '#94A3B8', fontSize: 9 }}
-                yAxisColor="#E2E8F0"
-                xAxisColor="#E2E8F0"
+                yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
+                xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
+                yAxisColor={colors.borderSoft}
+                xAxisColor={colors.borderSoft}
                 dataPointsColor="#D97706"
                 dataPointsRadius={3}
                 curved
@@ -803,7 +810,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
         {/* EXPORT BUTTONS */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5, paddingBottom: 20 }}>
           <TouchableOpacity
-            style={[styles.chartCard, { flex: 1, marginRight: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, backgroundColor: '#EFF6FF', borderColor: '#3B82F6', borderWidth: 1, opacity: isExporting ? 0.5 : 1 }]}
+            style={[styles.chartCard, { flex: 1, marginRight: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, backgroundColor: colors.infoBg, borderColor: '#3B82F6', borderWidth: 1, opacity: isExporting ? 0.5 : 1 }]}
             onPress={handleExportPDF}
             disabled={isExporting}
           >
@@ -812,7 +819,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.chartCard, { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, backgroundColor: '#F0FDF4', borderColor: '#10B981', borderWidth: 1, opacity: isExporting ? 0.5 : 1 }]}
+            style={[styles.chartCard, { flex: 1, marginLeft: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, backgroundColor: colors.successBg, borderColor: '#10B981', borderWidth: 1, opacity: isExporting ? 0.5 : 1 }]}
             onPress={handleExportCSV}
             disabled={isExporting}
           >

@@ -44,7 +44,29 @@ export const getStyles = (colors: any) => StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: colors.borderSoft,
+    position: 'relative',
   },
+  unreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#EF4444',
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: colors.card,
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 8,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
 
   // Main Status Card
   statusCard: {

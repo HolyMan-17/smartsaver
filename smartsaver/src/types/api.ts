@@ -48,11 +48,13 @@ export interface HorarioResponse extends HorarioBase {
 export interface UserSettingsResponse {
   ai_control_habilitado: boolean;
   auto_apagado_low_priority: boolean;
+  expo_push_token?: string;
 }
 
 export interface UserSettingsUpdate {
   ai_control_habilitado?: boolean;
   auto_apagado_low_priority?: boolean;
+  expo_push_token?: string;
 }
 
 export interface AIOverrideResponse {

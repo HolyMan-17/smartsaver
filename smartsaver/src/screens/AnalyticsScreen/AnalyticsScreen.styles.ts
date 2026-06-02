@@ -2,18 +2,18 @@ import { StyleSheet, Dimensions } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
-export const styles = StyleSheet.create({
+export const getStyles = (colors: any, isDark: boolean = false) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: 20,
     paddingTop: 15,
     paddingBottom: 15,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: colors.borderSoft,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -24,11 +24,11 @@ export const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#0F172A',
+    color: colors.text,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   scrollContent: {
@@ -38,7 +38,7 @@ export const styles = StyleSheet.create({
 
   // ─── Device Picker (tap card) ────────────────────────────
   pickerCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -48,7 +48,7 @@ export const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
   },
   pickerHeader: {
     flexDirection: 'row',
@@ -58,24 +58,24 @@ export const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1E293B',
+    color: colors.text,
     marginLeft: 8,
   },
   pickerSelected: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.borderSoft,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   pickerSelectedText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0F172A',
+    color: colors.text,
     flex: 1,
     marginRight: 8,
   },
@@ -84,17 +84,17 @@ export const styles = StyleSheet.create({
   singleDeviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: colors.borderSoft,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
   singleDeviceName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0F172A',
+    color: colors.text,
     marginLeft: 10,
     flex: 1,
   },
@@ -102,21 +102,23 @@ export const styles = StyleSheet.create({
   // ─── Device Picker Modal ─────────────────────────────────
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 34,
     maxHeight: '70%',
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
   },
   modalHandle: {
     width: 40,
     height: 5,
     borderRadius: 3,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: colors.borderSoft,
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 8,
@@ -124,7 +126,7 @@ export const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.text,
     textAlign: 'center',
     paddingHorizontal: 20,
     paddingVertical: 12,
@@ -138,12 +140,12 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     marginBottom: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
   },
   modalItemActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: isDark ? '#1e3a8a' : '#EFF6FF',
     borderColor: '#3B82F6',
   },
   modalItemContent: {
@@ -157,14 +159,14 @@ export const styles = StyleSheet.create({
   modalItemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1E293B',
+    color: colors.text,
   },
   modalItemNameActive: {
     color: '#3B82F6',
   },
   modalItemMac: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     marginTop: 2,
     fontFamily: 'Courier',
   },
@@ -180,13 +182,13 @@ export const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: colors.borderSoft,
     alignItems: 'center',
   },
   modalCancelText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#64748B',
+    color: colors.textSecondary,
   },
 
   // ─── Time Range Selector ─────────────────────────────────
@@ -194,7 +196,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 20,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: colors.borderSoft,
     borderRadius: 12,
     padding: 4,
   },
@@ -207,7 +209,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timeRangeButtonActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -217,7 +219,7 @@ export const styles = StyleSheet.create({
   timeRangeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
+    color: colors.textSecondary,
   },
   timeRangeTextActive: {
     color: '#3B82F6',
@@ -230,7 +232,7 @@ export const styles = StyleSheet.create({
     marginBottom: 12,
   },
   summaryCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     width: (width - 55) / 2,
     borderRadius: 16,
     padding: 16,
@@ -240,7 +242,7 @@ export const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
   },
   summaryIconContainer: {
     width: 36,
@@ -253,14 +255,14 @@ export const styles = StyleSheet.create({
   summaryTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748B',
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   summaryValue: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0F172A',
+    color: colors.text,
     marginTop: 4,
   },
   summarySubtext: {
@@ -272,7 +274,7 @@ export const styles = StyleSheet.create({
 
   // ─── Chart Containers ────────────────────────────────────
   chartCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 20,
@@ -282,7 +284,7 @@ export const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
   },
   chartHeader: {
     flexDirection: 'row',
@@ -292,7 +294,7 @@ export const styles = StyleSheet.create({
   chartTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1E293B',
+    color: colors.text,
     marginLeft: 8,
   },
   chartWrapper: {
@@ -311,12 +313,12 @@ export const styles = StyleSheet.create({
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
     marginRight: 6,
     marginBottom: 6,
     maxWidth: '48%',
@@ -330,13 +332,13 @@ export const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 11,
-    color: '#475569',
+    color: colors.text,
     fontWeight: '600',
     flexShrink: 1,
   },
   legendValue: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontWeight: '500',
     marginLeft: 4,
     flexShrink: 0,

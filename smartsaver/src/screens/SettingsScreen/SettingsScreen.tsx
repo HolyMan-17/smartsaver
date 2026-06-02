@@ -140,19 +140,7 @@ export const SettingsScreen = () => {
     );
   };
 
-  const handleReboot = () => {
-    Alert.alert(
-      'Reiniciar Puerta de Enlace', 
-      'Esto enviará un comando de reinicio de hardware a la Puerta de Enlace ESP32-S3. ¿Estás seguro?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Reiniciar', style: 'destructive', onPress: () => {
-          addLog({ type: 'SYSTEM', title: 'Reinicio de Puerta de Enlace Solicitado', message: `${userName || 'El usuario'} envió un comando remoto de reinicio a la Puerta de Enlace ESP32-S3.` });
-          alert('Comando de reinicio enviado a través del servidor.');
-        }}
-      ]
-    );
-  };
+
 
   if (isLoadingSettings) {
     return (
@@ -335,7 +323,7 @@ export const SettingsScreen = () => {
         {/* 6. SYSTEM & PREFERENCES */}
         <Text style={styles.sectionTitle}>Sistema y Preferencias</Text>
         <View style={styles.card}>
-          <View style={styles.row}>
+          <View style={[styles.row, styles.rowNoBorder]}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconContainer, { backgroundColor: colors.iconBg }]}>
                 <Feather name="moon" size={18} color={colors.text} />
@@ -352,19 +340,6 @@ export const SettingsScreen = () => {
               inactiveColor={colors.border}
             />
           </View>
-
-          <TouchableOpacity style={[styles.row, styles.rowNoBorder]} onPress={handleReboot}>
-            <View style={styles.rowLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.dangerBg }]}>
-                <Feather name="refresh-cw" size={18} color="#EF4444" />
-              </View>
-              <View style={styles.textWrapper}>
-                <Text style={[styles.rowTitle, styles.dangerText]}>Reinicio Remoto de Puerta de Enlace</Text>
-                <Text style={styles.rowSubtitle}>Enviar señal de reinicio al ESP32 a través de red</Text>
-              </View>
-            </View>
-            <Feather name="chevron-right" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
         </View>
 
       </ScrollView>

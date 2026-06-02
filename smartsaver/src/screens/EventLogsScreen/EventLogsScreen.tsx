@@ -3,10 +3,15 @@ import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { styles } from './EventLogsScreen.styles';
+import { getStyles } from './EventLogsScreen.styles';
+import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useEventLogStore, EventLog, LogType } from '../../store/useEventLogStore';
 
 export const EventLogsScreen = () => {
+  const isDark = useThemeStore((state) => state.isDark);
+  const colors = getColors(isDark);
+  const styles = getStyles(colors);
+
   const logs = useEventLogStore((s) => s.logs);
   const clearLogs = useEventLogStore((s) => s.clearLogs);
 
@@ -23,12 +28,18 @@ export const EventLogsScreen = () => {
 
   const getLogStyles = (type: LogType) => {
     switch (type) {
-      case 'CRITICAL': return { color: '#EF4444', bg: '#FEE2E2', icon: 'alert-triangle' };
-      case 'WARNING': return { color: '#F59E0B', bg: '#FEF3C7', icon: 'activity' };
-      case 'AI_ACTION': return { color: '#8B5CF6', bg: '#EDE9FE', icon: 'cpu' };
-      case 'USER_ACTION': return { color: '#3B82F6', bg: '#DBEAFE', icon: 'user' };
-      case 'SYSTEM': return { color: '#64748B', bg: '#F1F5F9', icon: 'server' };
-      default: return { color: '#64748B', bg: '#F1F5F9', icon: 'info' };
+      case 'CRITICAL': 
+        return { color: '#EF4444', bg: colors.dangerBg, icon: 'alert-triangle' };
+      case 'WARNING': 
+        return { color: '#F59E0B', bg: colors.warningBg, icon: 'activity' };
+      case 'AI_ACTION': 
+        return { color: isDark ? '#A78BFA' : '#8B5CF6', bg: isDark ? '#2e1065' : '#EDE9FE', icon: 'cpu' };
+      case 'USER_ACTION': 
+        return { color: isDark ? '#60A5FA' : '#3B82F6', bg: colors.infoBg, icon: 'user' };
+      case 'SYSTEM': 
+        return { color: colors.textSecondary, bg: colors.borderSoft, icon: 'server' };
+      default: 
+        return { color: colors.textSecondary, bg: colors.borderSoft, icon: 'info' };
     }
   };
 
@@ -91,11 +102,11 @@ export const EventLogsScreen = () => {
 
   const renderEmpty = () => (
     <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 }}>
-      <Feather name="inbox" size={48} color="#CBD5E1" />
-      <Text style={{ color: '#94A3B8', fontSize: 16, fontWeight: '600', marginTop: 16 }}>
+      <Feather name="inbox" size={48} color={colors.border} />
+      <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', marginTop: 16 }}>
         Aún no hay eventos registrados
       </Text>
-      <Text style={{ color: '#CBD5E1', fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 40 }}>
+      <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 40 }}>
         Los eventos aparecerán aquí a medida que interactúes con tus dispositivos: encendidos/apagados, desconexiones, cambios de zona de IA, y más.
       </Text>
     </View>
@@ -105,7 +116,7 @@ export const EventLogsScreen = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Feather name="arrow-left" size={24} color="#0F172A" />
+          <Feather name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Historial de Eventos</Text>

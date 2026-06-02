@@ -1,17 +1,17 @@
 import { StyleSheet } from 'react-native';
 
-export const styles = StyleSheet.create({
+export const getStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: 20,
     paddingTop: 15,
     paddingBottom: 15,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: colors.borderSoft,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -22,11 +22,11 @@ export const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#0F172A',
+    color: colors.text,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   listContainer: {
@@ -53,7 +53,7 @@ export const styles = StyleSheet.create({
   timelineLine: {
     width: 2,
     flex: 1,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: colors.borderSoft,
     marginTop: 4,
     marginBottom: -24, // Connects to the next dot
     zIndex: 1,
@@ -62,7 +62,7 @@ export const styles = StyleSheet.create({
   // Log Card
   logCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     shadowColor: '#64748B',
@@ -71,7 +71,7 @@ export const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: colors.borderSoft,
   },
   logHeader: {
     flexDirection: 'row',
@@ -95,17 +95,17 @@ export const styles = StyleSheet.create({
   logTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
+    color: colors.text,
     flexShrink: 1,
   },
   logTime: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: colors.textSecondary,
   },
   logMessage: {
     fontSize: 14,
-    color: '#475569',
+    color: colors.text,
     lineHeight: 20,
   },
   deviceBadge: {
@@ -113,12 +113,12 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: colors.borderSoft,
     marginTop: 10,
   },
   deviceBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#64748B',
+    color: colors.textSecondary,
   }
 });
