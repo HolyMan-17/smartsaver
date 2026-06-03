@@ -11,7 +11,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { NotificationService } from "../../services/notificationService";
 import { apiClient } from "../../services/apiClient";
 import { getStyles } from "./ScheduleScreen.styles";
 import { useThemeStore, getColors } from "../../store/useThemeStore";
@@ -266,12 +265,6 @@ export const ScheduleScreen = () => {
 
       if (res) {
         Alert.alert("Éxito", "Horario de operación guardado en el servidor.");
-        if (automationEnabled) {
-          NotificationService.sendNotification(
-            "Horario Configurado",
-            `El dispositivo "${name || mac}" operará de ${startHour}:${startMinute} ${startPeriod} a ${endHour}:${endMinute} ${endPeriod}.`,
-          );
-        }
         router.back();
       } else {
         Alert.alert("Error", "Fallo al guardar el horario.");

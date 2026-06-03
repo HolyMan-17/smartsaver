@@ -10,7 +10,6 @@ import { apiClient } from '../../services/apiClient';
 import { DispositivoLimitesCommand, AlertaResponse } from '../../types/api';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
-import { sendLocalNotification } from '../../utils/notifications';
 import { useTelemetryStore } from '../../store/useTelemetryStore';
 
 type Zone = 'Safe' | 'Warning' | 'Critical';
@@ -267,11 +266,9 @@ export const DeviceDetailScreen = () => {
         if (voltageState === 'sag') {
           const msg = `Se detectó un bajón de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
           addLog({ type: 'WARNING', title: 'Bajón de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
-          sendLocalNotification('⚡ Bajón de Voltaje', msg);
         } else if (voltageState === 'spike') {
           const msg = `Se detectó un pico de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
           addLog({ type: 'CRITICAL', title: 'Pico de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
-          sendLocalNotification('🔺 Pico de Voltaje', msg);
         } else if (prevVoltageState.current !== 'normal') {
           const prevLabel = prevVoltageState.current === 'sag' ? 'bajón' : 'pico';
           const msg = `El voltaje de ${deviceName} se normalizó a ${latest.voltaje.toFixed(1)}V tras un ${prevLabel}.`;
@@ -308,11 +305,6 @@ export const DeviceDetailScreen = () => {
           device_name: deviceName 
         });
 
-        sendLocalNotification(
-          '⚡ Límite de Consumo Excedido',
-          `El dispositivo ${deviceName} ha sido apagado de emergencia debido a: ${reasonMsg}.`
-        );
-
         Alert.alert(
           'Límite de Consumo Excedido',
           `El dispositivo ${deviceName} ha sido apagado de emergencia por seguridad debido a: ${reasonMsg}.`,
@@ -342,12 +334,6 @@ export const DeviceDetailScreen = () => {
       setAutomatizacionActiva(scheduleResult?.automatizacion_activa ?? connectionResult.automatizacion_activa ?? false);
       if (scheduleResult) setDeviceSchedule(scheduleResult);
 
-      if (prevAutoKillAt.current === null && serverAutoKillAt !== null) {
-        sendLocalNotification(
-          '⚠️ Apagado IA Programado',
-          `El dispositivo ${deviceName} se apagará automáticamente por consumo excesivo prolongado.`
-        );
-      }
       prevAutoKillAt.current = serverAutoKillAt;
     }
 

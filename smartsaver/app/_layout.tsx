@@ -1,17 +1,19 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox, ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
+import * as Notifications from 'expo-notifications';
 import 'react-native-reanimated';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useThemeStore, getColors } from '../src/store/useThemeStore';
 import { requestNotificationPermissions, getPushToken } from '../src/utils/notifications';
+import { useNotificationStore } from '../src/store/useNotificationStore';
 import { useUserStore } from '../src/store/useUserStore';
 import { useAuthStore } from '../src/store/useAuthStore';
-import apiClient, { setAccessTokenGetter } from '../src/services/apiClient';
+import { apiClient, setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
 import { useTelemetryStore } from '../src/store/useTelemetryStore';
 
@@ -30,6 +32,7 @@ LogBox.ignoreLogs([
 export default function RootLayout() {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = getColors(isDark);
+  const router = useRouter();
 
   const loadUser = useUserStore((state) => state.loadUser);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -39,11 +42,53 @@ export default function RootLayout() {
   const startConnection = useTelemetryStore((state) => state.startConnection);
   const stopConnection = useTelemetryStore((state) => state.stopConnection);
 
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const foregroundListener = useRef<Notifications.EventSubscription | null>(null);
+
   useEffect(() => {
     loadUser();
     rehydrate();
     setAccessTokenGetter(useAuthStore.getState().getAccessToken);
   }, []);
+
+  // Handle notification taps — navigate to notification detail
+  useEffect(() => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      const title = response.notification.request.content.title ?? '';
+      const body = response.notification.request.content.body ?? '';
+
+      // Save remote push notifications to the in-app store
+      if (data?._isRemote || !data?._localId) {
+        try {
+          const store = useNotificationStore.getState();
+          store.addNotification(title, body, data);
+        } catch { /* already saved or store error */ }
+      }
+
+      // Navigate to the notifications list
+      router.push('/notifications');
+    });
+
+    foregroundListener.current = Notifications.addNotificationReceivedListener((notification) => {
+      const data = notification.request.content.data;
+      const title = notification.request.content.title ?? '';
+      const body = notification.request.content.body ?? '';
+
+      // Save remote push notifications to the in-app store when they arrive in foreground
+      if (data?._isRemote || !data?._localId) {
+        try {
+          const store = useNotificationStore.getState();
+          store.addNotification(title, body, data);
+        } catch { /* already saved or store error */ }
+      }
+    });
+
+    return () => {
+      responseListener.current?.remove();
+      foregroundListener.current?.remove();
+    };
+  }, [router]);
 
   useEffect(() => {
     if (isAuthenticated) {
