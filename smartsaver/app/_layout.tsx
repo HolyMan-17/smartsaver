@@ -58,6 +58,11 @@ export default function RootLayout() {
       const title = response.notification.request.content.title ?? '';
       const body = response.notification.request.content.body ?? '';
 
+      // Skip silent/empty push notifications
+      if (!title.trim() && !body.trim()) {
+        return;
+      }
+
       // Save remote push notifications to the in-app store
       if (data?._isRemote || !data?._localId) {
         try {
@@ -75,6 +80,11 @@ export default function RootLayout() {
       const title = notification.request.content.title ?? '';
       const body = notification.request.content.body ?? '';
 
+      // Skip silent/empty push notifications
+      if (!title.trim() && !body.trim()) {
+        return;
+      }
+
       // Save remote push notifications to the in-app store when they arrive in foreground
       if (data?._isRemote || !data?._localId) {
         try {
@@ -83,6 +93,7 @@ export default function RootLayout() {
         } catch { /* already saved or store error */ }
       }
     });
+
 
     return () => {
       responseListener.current?.remove();

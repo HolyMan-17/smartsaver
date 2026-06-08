@@ -90,6 +90,20 @@ export interface EventoResponse {
   timestamp: string;
 }
 
+export interface RecomendacionResponse {
+  id: number;
+  id_artefacto: number;
+  tipo_recomendacion: string;
+  mensaje: string;
+  accion_sugerida: string | null;
+  severidad: string;
+  resuelto: boolean;
+  resolucion: string | null;
+  timestamp: string;
+  resuelto_en: string | null;
+}
+
+
 // ─── Request / Command Schemas ───────────────────────────
 // MAC is in the URL path, not in request bodies
 
@@ -141,3 +155,13 @@ export interface TelemetriaCreate {
   potencia: number;          // >= 0
   tiempo_operacion_s: number; // >= 0
 }
+
+export interface NotificacionUsuarioResponse {
+  id: number;
+  titulo: string;
+  cuerpo: string;
+  leido: boolean;
+  eliminado: boolean;
+  timestamp: string;
+}
+

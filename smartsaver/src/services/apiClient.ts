@@ -7,12 +7,14 @@ import {
   AgregadosResponse,
   AlertaResponse,
   EventoResponse,
+  RecomendacionResponse,
   ApiErrorResponse,
   UserSettingsResponse,
   UserSettingsUpdate,
   AIOverrideResponse,
   HorarioUpdate,
   HorarioResponse,
+  NotificacionUsuarioResponse,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -286,6 +288,19 @@ export const apiClient = {
     }
   },
 
+  // ─── Recommendations ─────────────────────────────────────
+
+  getRecommendations: async (soloActivas: boolean = true): Promise<RecomendacionResponse[]> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/recomendaciones?solo_activas=${soloActivas}`);
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
+
+
   // ─── Health (unauthenticated) ───────────────────────────
 
   healthCheck: async () => {
@@ -337,6 +352,51 @@ export const apiClient = {
       return res.json();
     } catch {
       return null;
+    }
+  },
+
+  // ─── User Notifications ──────────────────────────────────
+  getNotifications: async (): Promise<NotificacionUsuarioResponse[]> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications`);
+      if (!res.ok) return [];
+      return res.json();
+    } catch {
+      return [];
+    }
+  },
+
+  markNotificationRead: async (id: number): Promise<boolean> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ leido: true }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  deleteNotification: async (id: number): Promise<boolean> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications/${id}`, {
+        method: 'DELETE',
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  clearAllNotifications: async (): Promise<boolean> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications`, {
+        method: 'DELETE',
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   },
 };

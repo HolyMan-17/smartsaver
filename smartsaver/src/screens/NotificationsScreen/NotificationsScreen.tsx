@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -17,6 +17,21 @@ export const NotificationsScreen = () => {
   const deleteNotification = useNotificationStore((s) => s.deleteNotification);
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
   const markAsRead = useNotificationStore((s) => s.markAsRead);
+  const syncBackendNotifications = useNotificationStore((s) => s.syncBackendNotifications);
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await syncBackendNotifications();
+    setRefreshing(false);
+  };
+
+  // Sync notifications on mount
+  useEffect(() => {
+    syncBackendNotifications();
+  }, [syncBackendNotifications]);
+
 
   // Mark all notifications as read when entering the screen
   useEffect(() => {
@@ -217,6 +232,14 @@ export const NotificationsScreen = () => {
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#3B82F6']}
+            tintColor={colors.text}
+          />
+        }
       />
     </SafeAreaView>
   );
