@@ -58,8 +58,7 @@ export const DeviceDetailScreen = () => {
   const [autoKillAt, setAutoKillAt] = useState<string | null>(null);
   const [autoKillCountdown, setAutoKillCountdown] = useState<string>('');
   const [isOverriding, setIsOverriding] = useState(false);
-  const [automatizacionActiva, setAutomatizacionActiva] = useState(false);
-  const [deviceSchedule, setDeviceSchedule] = useState<any>(null);
+  const [automationLockActive, setAutomationLockActive] = useState(false);
 
   // Refs to track previous values for change-detection logging
   const prevOnline = useRef<boolean | null>(null);
@@ -199,12 +198,11 @@ export const DeviceDetailScreen = () => {
   const fetchDeviceData = async () => {
     if (!mac) return;
 
-    // Fetch telemetry, connection state, active alerts, and schedule concurrently
-    const [telemetryResult, connectionResult, alertsResult, scheduleResult] = await Promise.all([
+    // Fetch telemetry, connection state, and active alerts concurrently
+    const [telemetryResult, connectionResult, alertsResult] = await Promise.all([
       apiClient.getTelemetryHistory(mac, 1),
       apiClient.getDeviceDetail(mac),
       apiClient.getAlerts(true),
-      apiClient.getDeviceSchedule(mac),
     ]);
 
     // Process active alerts for BMS critical state matching this device ID
@@ -329,10 +327,7 @@ export const DeviceDetailScreen = () => {
       const serverAutoKillAt = connectionResult.auto_kill_at;
       setAutoKillAt(serverAutoKillAt);
       
-      // Use the explicitly fetched schedule to guarantee the automation state is captured 
-      // even if the backend hasn't deployed the DispositivoResponse updates.
-      setAutomatizacionActiva(scheduleResult?.automatizacion_activa ?? connectionResult.automatizacion_activa ?? false);
-      if (scheduleResult) setDeviceSchedule(scheduleResult);
+      setAutomationLockActive(connectionResult.automation_lock_active ?? false);
 
       prevAutoKillAt.current = serverAutoKillAt;
     }
@@ -363,27 +358,10 @@ export const DeviceDetailScreen = () => {
 
   // ── POST /api/comando/estado ──
   const handleTogglePower = async () => {
-    if (!mac || !isOnline) return; // Block commands to offline devices
+    if (!mac || !isOnline) return;
     const newState = !isOn;
-    
-    // Strict mode check
-    const isCurrentlyInSchedule = (): boolean => {
-      if (!automatizacionActiva || !deviceSchedule?.hora_encendido || !deviceSchedule?.hora_apagado) return false;
-      const now = new Date();
-      const backendToday = now.getDay() === 0 ? 7 : now.getDay();
-      if (!deviceSchedule.dias_operacion.includes(backendToday)) return false;
-
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      const [startH, startM] = deviceSchedule.hora_encendido.split(':').map(Number);
-      const startMinutes = startH * 60 + startM;
-      
-      const [endH, endM] = deviceSchedule.hora_apagado.split(':').map(Number);
-      const endMinutes = endH * 60 + endM;
-
-      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
-    };
-
-    if (isCurrentlyInSchedule()) {
+    // Lock ONLY when: turning OFF + device is ON + automation lock is active from backend
+    if (!newState && automationLockActive) {
       Alert.alert(
         "Automatización Activa",
         "El dispositivo está operando dentro del horario establecido. ¿Le gustaría apagarlo de todos modos? Esto deshabilitará la automatización aunque preservará tu horario.",
@@ -393,7 +371,6 @@ export const DeviceDetailScreen = () => {
             text: "Sí, controlar manualmente", 
             style: "destructive", 
             onPress: async () => {
-              // Add override log
               addLog({
                 type: 'USER_ACTION',
                 title: 'Horario Anulado',
@@ -427,7 +404,7 @@ export const DeviceDetailScreen = () => {
         setIsOn(newState);
         setIsSyncing(true);
         if (override) {
-          setAutomatizacionActiva(false);
+          setAutomationLockActive(false);
         }
 
 

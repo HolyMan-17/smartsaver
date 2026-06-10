@@ -29,6 +29,7 @@ export interface DispositivoResponse {
   auto_kill_at: string | null;
   ai_override_until: string | null;
   automatizacion_activa?: boolean;
+  automation_lock_active?: boolean;
 }
 
 export interface HorarioBase {

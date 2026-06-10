@@ -20,6 +20,7 @@ interface DeviceNode {
   isOnline: boolean;
   isOn: boolean;
   isSyncing: boolean;
+  automationLockActive?: boolean;
 }
 
 // Fallback device registry — used only when API is unavailable
@@ -70,6 +71,7 @@ export const DevicesScreen = () => {
               isOnline: device.is_online,
               isOn: device.estado_reportado,
               isSyncing: device.estado_deseado !== device.estado_reportado,
+              automationLockActive: device.automation_lock_active,
             });
           } catch {
             results.push({
@@ -84,6 +86,7 @@ export const DevicesScreen = () => {
               isOnline: device.is_online,
               isOn: device.estado_reportado,
               isSyncing: device.estado_deseado !== device.estado_reportado,
+              automationLockActive: device.automation_lock_active,
             });
           }
         }
@@ -295,7 +298,12 @@ export const DevicesScreen = () => {
         </View>
         
         <View style={styles.deviceInfo}>
-          <Text style={styles.deviceName}>{item.name}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+            <Text style={[styles.deviceName, { marginBottom: 0 }]}>{item.name}</Text>
+            {item.automationLockActive && (
+              <Feather name="lock" size={14} color="#D97706" style={{ marginLeft: 6 }} />
+            )}
+          </View>
           {item.name !== item.mac && (
             <Text style={styles.deviceMac}>{item.mac}</Text>
           )}

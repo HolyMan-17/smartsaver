@@ -225,25 +225,6 @@ export const ScheduleScreen = () => {
 
     setIsSaving(true);
     try {
-      const parseToMinutes = (h: string, m: string, p: string) => {
-        let hours = parseInt(h, 10);
-        if (hours === 12) hours = p === "AM" ? 0 : 12;
-        else if (p === "PM") hours += 12;
-        return hours * 60 + parseInt(m, 10);
-      };
-
-      const startTotal = parseToMinutes(startHour, startMinute, startPeriod);
-      const endTotal = parseToMinutes(endHour, endMinute, endPeriod);
-
-      if (startTotal >= endTotal) {
-        setIsSaving(false);
-        Alert.alert(
-          "Horario Inválido",
-          "La hora de inicio debe ser estrictamente anterior a la hora de apagado.",
-        );
-        return;
-      }
-
       const backendDays = selectedDays.map(mapDayToBackend);
       const hora_encendido = formatTimeForBackend(
         startHour,
