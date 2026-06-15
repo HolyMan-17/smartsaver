@@ -14,7 +14,12 @@ import { useTelemetryStore } from '../../store/useTelemetryStore';
 
 type Zone = 'Safe' | 'Warning' | 'Critical';
 
-const classifyZone = (watts: number): Zone => {
+const classifyZone = (watts: number, aiStatus?: number | null): Zone => {
+  if (aiStatus === 2) return 'Critical';
+  if (aiStatus === 1) return 'Warning';
+  if (aiStatus === 0) return 'Safe';
+
+  // Fallback to watts if aiStatus is not a valid number
   if (watts > 30) return 'Critical';
   if (watts > 15) return 'Warning';
   return 'Safe';
@@ -48,7 +53,6 @@ export const DeviceDetailScreen = () => {
   const [zone, setZone] = useState<Zone>('Safe');
   const [isLoading, setIsLoading] = useState(true);
   const [isSendingCommand, setIsSendingCommand] = useState(false);
-  const [aiStatus, setAiStatus] = useState<number>(0);
   const [activeBmsAlert, setActiveBmsAlert] = useState<AlertaResponse | null>(null);
   const [activeBmsAlertsList, setActiveBmsAlertsList] = useState<AlertaResponse[]>([]);
   const [isResolvingAlert, setIsResolvingAlert] = useState(false);
@@ -229,9 +233,8 @@ export const DeviceDetailScreen = () => {
       setVoltage(latest.voltaje);
       setCurrent(latest.corriente);
       setWatts(latest.potencia);
-      setAiStatus(latest.ai_status ?? 0);
 
-      const newZone = classifyZone(latest.potencia);
+      const newZone = classifyZone(latest.potencia, latest.ai_status);
       // ── Log AI zone transitions (no push notifications — informational only) ──
       if (prevZone.current !== null && prevZone.current !== newZone) {
         if (newZone === 'Warning') {

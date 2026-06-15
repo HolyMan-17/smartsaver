@@ -1,0 +1,45 @@
+\babel@toc {spanish}{}\relax 
+\contentsline {section}{\numberline {1}Introducción}{1}{section.1}%
+\contentsline {section}{\numberline {2}El Sistema}{1}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Configuración del nodo central}{1}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Emparejamiento}{1}{subsection.2.2}%
+\contentsline {section}{\numberline {3}Inicio de Sesión}{1}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Primer acceso}{1}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Configuración inicial}{1}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Cerrar sesión}{1}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Dashboard}{2}{section.4}%
+\contentsline {section}{\numberline {5}Dispositivos Activos}{3}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Filtros}{3}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Tarjeta de dispositivo}{3}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Editar nombre}{3}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Panel de Detalle del Dispositivo}{4}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Encabezado}{4}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Botón de encendido/apagado}{4}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Apagado programado por IA}{5}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Alerta BMS crítica}{5}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}Seguridad IA}{5}{subsection.6.5}%
+\contentsline {subsection}{\numberline {6.6}Telemetría}{5}{subsection.6.6}%
+\contentsline {subsection}{\numberline {6.7}Prioridad del dispositivo}{5}{subsection.6.7}%
+\contentsline {subsection}{\numberline {6.8}Horario de operación}{5}{subsection.6.8}%
+\contentsline {subsection}{\numberline {6.9}Límites de seguridad}{5}{subsection.6.9}%
+\contentsline {section}{\numberline {7}Límites de Seguridad}{6}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Umbrales disponibles}{6}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Formas de ajuste}{6}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Medidores visuales}{6}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Guardar}{7}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Horarios de Operación}{7}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Campos de configuración}{7}{subsection.8.1}%
+\contentsline {section}{\numberline {9}Historial de Eventos}{8}{section.9}%
+\contentsline {section}{\numberline {10}Notificaciones}{8}{section.10}%
+\contentsline {section}{\numberline {11}Analíticas}{9}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Selector de periodo y dispositivo}{9}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}Tarjetas resumen}{9}{subsection.11.2}%
+\contentsline {subsection}{\numberline {11.3}Gráficos}{9}{subsection.11.3}%
+\contentsline {subsection}{\numberline {11.4}Exportación}{10}{subsection.11.4}%
+\contentsline {section}{\numberline {12}Ajustes}{10}{section.12}%
+\contentsline {subsection}{\numberline {12.1}Cuenta}{11}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Red y conectividad}{11}{subsection.12.2}%
+\contentsline {subsection}{\numberline {12.3}Automatización}{11}{subsection.12.3}%
+\contentsline {subsection}{\numberline {12.4}Alertas y notificaciones}{11}{subsection.12.4}%
+\contentsline {subsection}{\numberline {12.5}Sistema y preferencias}{11}{subsection.12.5}%
+\contentsline {subsection}{\numberline {12.6}Datos y reportes}{11}{subsection.12.6}%

@@ -28,7 +28,11 @@ export const DEVICE_REGISTRY = [
   { id: 'node_c3_01', name: 'Simulador Activo', mac: '00:1B:44:11:3A:B7' },
 ];
 
-const classifyZone = (watts: number): 'Safe' | 'Warning' | 'Critical' => {
+const classifyZone = (watts: number, aiStatus?: number | null): 'Safe' | 'Warning' | 'Critical' => {
+  if (aiStatus === 2) return 'Critical';
+  if (aiStatus === 1) return 'Warning';
+  if (aiStatus === 0) return 'Safe';
+
   if (watts > 30) return 'Critical';
   if (watts > 15) return 'Warning';
   return 'Safe';
@@ -66,7 +70,7 @@ export const DevicesScreen = () => {
               voltage: latest?.voltaje ?? 0,
               current: latest?.corriente ?? 0,
               watts: latest?.potencia ?? 0,
-              zone: latest ? classifyZone(latest.potencia) : 'Safe',
+              zone: latest ? classifyZone(latest.potencia, latest.ai_status) : 'Safe',
               aiStatus: latest?.ai_status ?? 0,
               isOnline: device.is_online,
               isOn: device.estado_reportado,
@@ -111,7 +115,7 @@ export const DevicesScreen = () => {
             voltage: latest.voltaje,
             current: latest.corriente,
             watts: latest.potencia,
-            zone: classifyZone(latest.potencia),
+            zone: classifyZone(latest.potencia, latest.ai_status),
             aiStatus: latest.ai_status ?? 0,
             isOnline: true,
             isOn: true,

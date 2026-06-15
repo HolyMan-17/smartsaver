@@ -1,0 +1,33 @@
+# EAS Ignore file at Git Root for SmartSaver project
+
+# Ignore native directories containing large build artifacts
+smartsaver/android/
+smartsaver/ios/
+
+# Ignore dependencies
+node_modules/
+smartsaver/node_modules/
+
+# Ignore Expo temp files
+smartsaver/.expo/
+smartsaver/dist/
+smartsaver/web-build/
+
+# Ignore local yarn caches/states
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+smartsaver/.yarn/
+
+# Ignore screenshots, documents, and logs
+aplicacion_ss/
+docs/
+remember-me/
+.agents/
+
+# Ignore environment/secret files except google-services.json (needed for building)
+smartsaver/.env*
+smartsaver/*firebase-adminsdk*.json
