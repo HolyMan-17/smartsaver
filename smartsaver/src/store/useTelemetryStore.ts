@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import { TelemetryReading, WSMessage } from '../types/telemetry';
 import { wsService } from '../services/WebSocketService';
-import { apiClient } from '../services/apiClient';
-import { useEventLogStore } from './useEventLogStore';
 
 interface TelemetryState {
   latestReadings: Record<string, TelemetryReading>;

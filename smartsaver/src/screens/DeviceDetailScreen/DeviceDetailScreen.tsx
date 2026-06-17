@@ -58,6 +58,15 @@ export const DeviceDetailScreen = () => {
   const [isResolvingAlert, setIsResolvingAlert] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
+  // ponytail: integrate useTelemetryStore to read live readings and online status reactively, avoiding HTTP N+1 polling
+  const liveReading = useTelemetryStore((s) => mac ? s.latestReadings[mac] : undefined);
+  const liveOnline = useTelemetryStore((s) => mac ? s.deviceOnlineStatus[mac] : undefined);
+
+  const isLoadingRef = useRef(isLoading);
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
   // AI Auto-Kill States
   const [autoKillAt, setAutoKillAt] = useState<string | null>(null);
   const [autoKillCountdown, setAutoKillCountdown] = useState<string>('');
@@ -199,12 +208,131 @@ export const DeviceDetailScreen = () => {
     }
   };
 
+  // ponytail: extract telemetry processing into a reusable useCallback helper
+  const processTelemetry = React.useCallback((
+    latest: { voltaje: number; corriente: number; potencia: number; ai_status?: number | null },
+    hasActiveBmsAlert: boolean
+  ) => {
+    setVoltage(latest.voltaje);
+    setCurrent(latest.corriente);
+    setWatts(latest.potencia);
+
+    const newZone = classifyZone(latest.potencia, latest.ai_status);
+    // ── Log AI zone transitions (no push notifications — informational only) ──
+    if (prevZone.current !== null && prevZone.current !== newZone) {
+      if (newZone === 'Warning') {
+        const msg = `El consumo de energía alcanzó ${latest.potencia.toFixed(1)}W. La zona cambió de ${prevZone.current === 'Safe' ? 'Seguro' : 'Crítico'} a Riesgo.`;
+        addLog({ type: 'WARNING', title: 'Alto Consumo Detectado', message: msg, device_id: id, device_name: deviceName });
+      } else if (newZone === 'Critical') {
+        const msg = `El consumo de energía se disparó a ${latest.potencia.toFixed(1)}W. La IA marcó el dispositivo como CRÍTICO.`;
+        addLog({ type: 'CRITICAL', title: 'Alerta de Energía Crítica', message: msg, device_id: id, device_name: deviceName });
+      } else if (newZone === 'Safe' && prevZone.current !== 'Safe') {
+        const msg = `Los niveles de energía se normalizaron a ${latest.potencia.toFixed(1)}W. El dispositivo volvió a la zona Segura.`;
+        addLog({ type: 'AI_ACTION', title: 'Zona Restaurada a Seguro', message: msg, device_id: id, device_name: deviceName });
+      }
+    }
+    prevZone.current = newZone;
+    setZone(newZone);
+
+    // ── Voltage Sag / Spike Detection ("bajones" y picos) ──
+    const NOMINAL_V = 120;
+    const SAG_THRESHOLD = NOMINAL_V * 0.90;   // 108V — 10% sag
+    const SPIKE_THRESHOLD = NOMINAL_V * 1.10;  // 132V — 10% spike
+
+    let voltageState: 'normal' | 'sag' | 'spike' = 'normal';
+    if (latest.voltaje <= SAG_THRESHOLD && latest.voltaje > 0) {
+      voltageState = 'sag';
+    } else if (latest.voltaje >= SPIKE_THRESHOLD) {
+      voltageState = 'spike';
+    }
+
+    if (voltageState !== prevVoltageState.current) {
+      if (voltageState === 'sag') {
+        const msg = `Se detectó un bajón de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
+        addLog({ type: 'WARNING', title: 'Bajón de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
+      } else if (voltageState === 'spike') {
+        const msg = `Se detectó un pico de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
+        addLog({ type: 'CRITICAL', title: 'Pico de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
+      } else if (prevVoltageState.current !== 'normal') {
+        const prevLabel = prevVoltageState.current === 'sag' ? 'bajón' : 'pico';
+        const msg = `El voltaje de ${deviceName} se normalizó a ${latest.voltaje.toFixed(1)}V tras un ${prevLabel}.`;
+        addLog({ type: 'AI_ACTION', title: 'Voltaje Normalizado', message: msg, device_id: id, device_name: deviceName });
+      }
+      prevVoltageState.current = voltageState;
+    }
+
+    // ── Limit Enforcement ──
+    const limits = savedLimitsRef.current;
+    const overVoltage = limits.v !== undefined && latest.voltaje > limits.v;
+    const overCurrent = limits.c !== undefined && latest.corriente > limits.c;
+    const overPower = limits.p !== undefined && latest.potencia > limits.p;
+
+    if ((overVoltage || overCurrent || overPower) && isOnRef.current && !hasActiveBmsAlert) {
+      // Enforce shutdown
+      setIsOn(false); // Optimistic UI update
+      if (mac) {
+        apiClient.setDeviceState(mac, false);
+      }
+      
+      let reason = [];
+      if (overVoltage) reason.push(`Voltaje (${latest.voltaje.toFixed(1)}V > ${limits.v}V)`);
+      if (overCurrent) reason.push(`Corriente (${latest.corriente.toFixed(1)}A > ${limits.c}A)`);
+      if (overPower) reason.push(`Potencia (${latest.potencia.toFixed(1)}W > ${limits.p}W)`);
+      
+      const reasonMsg = reason.join(' y ');
+      const logMsg = `Apagado de emergencia para ${deviceName}. Se superó el umbral: ${reasonMsg}.`;
+      
+      addLog({ 
+        type: 'CRITICAL', 
+        title: 'Corte por Límite Excedido', 
+        message: logMsg, 
+        device_id: id, 
+        device_name: deviceName 
+      });
+
+      Alert.alert(
+        'Límite de Consumo Excedido',
+        `El dispositivo ${deviceName} ha sido apagado de emergencia por seguridad debido a: ${reasonMsg}.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Revisar Umbrales', onPress: () => setShowLimitsModal(true) }
+        ]
+      );
+    }
+  }, [deviceName, id, mac, addLog]);
+
+  // Process real-time telemetry updates reactively when liveReading changes
+  useEffect(() => {
+    if (liveReading) {
+      processTelemetry(liveReading, activeBmsAlert !== null);
+    }
+  }, [liveReading, activeBmsAlert, processTelemetry]);
+
+  // Synchronize liveOnline to local isOnline state reactively
+  useEffect(() => {
+    if (liveOnline !== undefined) {
+      const newOnline = liveOnline;
+      if (prevOnline.current !== null && prevOnline.current !== newOnline) {
+        if (!newOnline) {
+          addLog({ type: 'CRITICAL', title: 'Dispositivo Desconectado', message: `Se perdió la conexión con ${deviceName}. El hardware ya no se reporta con la puerta de enlace.`, device_id: id, device_name: deviceName });
+        } else {
+          addLog({ type: 'SYSTEM', title: 'Dispositivo Reconectado', message: `${deviceName} vuelve a estar en línea y reportando telemetría.`, device_id: id, device_name: deviceName });
+        }
+      }
+      prevOnline.current = newOnline;
+      setIsOnline(newOnline);
+    }
+  }, [liveOnline, deviceName, id, addLog]);
+
   const fetchDeviceData = async () => {
     if (!mac) return;
 
+    const currentLiveReading = useTelemetryStore.getState().latestReadings[mac];
+    const shouldFetchHistory = isLoadingRef.current || !currentLiveReading;
+
     // Fetch telemetry, connection state, and active alerts concurrently
     const [telemetryResult, connectionResult, alertsResult] = await Promise.all([
-      apiClient.getTelemetryHistory(mac, 1),
+      shouldFetchHistory ? apiClient.getTelemetryHistory(mac, 1) : Promise.resolve(null),
       apiClient.getDeviceDetail(mac),
       apiClient.getAlerts(true),
     ]);
@@ -230,95 +358,12 @@ export const DeviceDetailScreen = () => {
     // Process telemetry
     if (telemetryResult && telemetryResult.length > 0) {
       const latest = telemetryResult[0];
-      setVoltage(latest.voltaje);
-      setCurrent(latest.corriente);
-      setWatts(latest.potencia);
-
-      const newZone = classifyZone(latest.potencia, latest.ai_status);
-      // ── Log AI zone transitions (no push notifications — informational only) ──
-      if (prevZone.current !== null && prevZone.current !== newZone) {
-        if (newZone === 'Warning') {
-          const msg = `El consumo de energía alcanzó ${latest.potencia.toFixed(1)}W. La zona cambió de ${prevZone.current === 'Safe' ? 'Seguro' : 'Crítico'} a Riesgo.`;
-          addLog({ type: 'WARNING', title: 'Alto Consumo Detectado', message: msg, device_id: id, device_name: deviceName });
-        } else if (newZone === 'Critical') {
-          const msg = `El consumo de energía se disparó a ${latest.potencia.toFixed(1)}W. La IA marcó el dispositivo como CRÍTICO.`;
-          addLog({ type: 'CRITICAL', title: 'Alerta de Energía Crítica', message: msg, device_id: id, device_name: deviceName });
-        } else if (newZone === 'Safe' && prevZone.current !== 'Safe') {
-          const msg = `Los niveles de energía se normalizaron a ${latest.potencia.toFixed(1)}W. El dispositivo volvió a la zona Segura.`;
-          addLog({ type: 'AI_ACTION', title: 'Zona Restaurada a Seguro', message: msg, device_id: id, device_name: deviceName });
-        }
-      }
-      prevZone.current = newZone;
-      setZone(newZone);
-
-      // ── Voltage Sag / Spike Detection ("bajones" y picos) ──
-      const NOMINAL_V = 120;
-      const SAG_THRESHOLD = NOMINAL_V * 0.90;   // 108V — 10% sag
-      const SPIKE_THRESHOLD = NOMINAL_V * 1.10;  // 132V — 10% spike
-
-      let voltageState: 'normal' | 'sag' | 'spike' = 'normal';
-      if (latest.voltaje <= SAG_THRESHOLD && latest.voltaje > 0) {
-        voltageState = 'sag';
-      } else if (latest.voltaje >= SPIKE_THRESHOLD) {
-        voltageState = 'spike';
-      }
-
-      if (voltageState !== prevVoltageState.current) {
-        if (voltageState === 'sag') {
-          const msg = `Se detectó un bajón de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
-          addLog({ type: 'WARNING', title: 'Bajón de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
-        } else if (voltageState === 'spike') {
-          const msg = `Se detectó un pico de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
-          addLog({ type: 'CRITICAL', title: 'Pico de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
-        } else if (prevVoltageState.current !== 'normal') {
-          const prevLabel = prevVoltageState.current === 'sag' ? 'bajón' : 'pico';
-          const msg = `El voltaje de ${deviceName} se normalizó a ${latest.voltaje.toFixed(1)}V tras un ${prevLabel}.`;
-          addLog({ type: 'AI_ACTION', title: 'Voltaje Normalizado', message: msg, device_id: id, device_name: deviceName });
-        }
-        prevVoltageState.current = voltageState;
-      }
-
-      // ── Limit Enforcement ──
-      const limits = savedLimitsRef.current;
-      const overVoltage = limits.v !== undefined && latest.voltaje > limits.v;
-      const overCurrent = limits.c !== undefined && latest.corriente > limits.c;
-      const overPower = limits.p !== undefined && latest.potencia > limits.p;
-
-      if ((overVoltage || overCurrent || overPower) && isOnRef.current && !hasActiveBmsAlert) {
-        // Enforce shutdown
-        setIsOn(false); // Optimistic UI update
-        apiClient.setDeviceState(mac, false);
-        
-        let reason = [];
-        if (overVoltage) reason.push(`Voltaje (${latest.voltaje.toFixed(1)}V > ${limits.v}V)`);
-        if (overCurrent) reason.push(`Corriente (${latest.corriente.toFixed(1)}A > ${limits.c}A)`);
-        if (overPower) reason.push(`Potencia (${latest.potencia.toFixed(1)}W > ${limits.p}W)`);
-        
-        const reasonMsg = reason.join(' y ');
-
-        const logMsg = `Apagado de emergencia para ${deviceName}. Se superó el umbral: ${reasonMsg}.`;
-        
-        addLog({ 
-          type: 'CRITICAL', 
-          title: 'Corte por Límite Excedido', 
-          message: logMsg, 
-          device_id: id, 
-          device_name: deviceName 
-        });
-
-        Alert.alert(
-          'Límite de Consumo Excedido',
-          `El dispositivo ${deviceName} ha sido apagado de emergencia por seguridad debido a: ${reasonMsg}.`,
-          [
-            { text: 'OK', style: 'cancel' },
-            { text: 'Revisar Umbrales', onPress: () => setShowLimitsModal(true) }
-          ]
-        );
-      }
+      processTelemetry(latest, hasActiveBmsAlert);
     }
 
-    // Process connection state (API is the Single Source of Truth)
-    const newOnline = connectionResult?.is_online ?? false;
+    // Process connection state
+    const currentLiveOnline = useTelemetryStore.getState().deviceOnlineStatus[mac];
+    const newOnline = currentLiveOnline !== undefined ? currentLiveOnline : (connectionResult?.is_online ?? false);
     
     // Sync power state from backend
     if (connectionResult) {
@@ -940,7 +985,7 @@ export const DeviceDetailScreen = () => {
                       } else {
                         setResolveError('Error: No se pudieron restablecer todas las alertas. Intente de nuevo.');
                       }
-                    } catch (err) {
+                    } catch {
                       setResolveError('Error: Fallo de red. Compruebe su conexión e intente de nuevo.');
                     } finally {
                       setIsResolvingAlert(false);

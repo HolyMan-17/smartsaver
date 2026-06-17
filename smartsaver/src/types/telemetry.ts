@@ -66,23 +66,5 @@ export type WSMessage =
   | WSAutoKillExecutedMessage
   | WSAutoKillCancelledMessage;
 
-export interface MLPrediction {
-  current_zone: BatteryZone;
-  confidence_percent: number;
-}
+// ponytail: MLPrediction, HardwareState, and IoTGatewayPayload were unused boilerplate types and have been deleted.
 
-export interface HardwareState {
-  relay_active: boolean;
-}
-
-export interface IoTGatewayPayload {
-  device_id: string;
-  timestamp: number;
-  telemetry: {
-    voltage: number;
-    current: number;
-    watts: number;
-  };
-  ml_prediction: MLPrediction;
-  hardware_state: HardwareState;
-}

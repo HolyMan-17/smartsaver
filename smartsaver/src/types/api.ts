@@ -38,8 +38,7 @@ export interface HorarioBase {
   hora_apagado: string | null;   // Format "HH:mm:ss"
   automatizacion_activa: boolean;
 }
-
-export interface HorarioUpdate extends HorarioBase {}
+export type HorarioUpdate = HorarioBase;
 
 export interface HorarioResponse extends HorarioBase {
   id_artefacto: number;

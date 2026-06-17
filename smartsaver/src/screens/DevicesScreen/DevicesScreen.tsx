@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { getStyles } from './DevicesScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { apiClient } from '../../services/apiClient';
 import { TelemetriaResponse } from '../../types/api';
+import { useTelemetryStore } from '../../store/useTelemetryStore';
 
 interface DeviceNode {
   id: string;
@@ -51,6 +52,14 @@ export const DevicesScreen = () => {
   const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'P1' | 'P2' | 'P3'>('ALL');
   const [showFilter, setShowFilter] = useState(false);
 
+  // ponytail: YAGNI/performance optimization - store fetched initial telemetry history MACs in a ref to avoid duplicate API calls
+  const fetchedMacsRef = useRef<Record<string, boolean>>({});
+  // ponytail: YAGNI/performance optimization - keep track of latest devices in a ref to avoid stale closures in setInterval callbacks
+  const devicesRef = useRef<DeviceNode[]>([]);
+
+  const latestReadings = useTelemetryStore((s) => s.latestReadings);
+  const deviceOnlineStatus = useTelemetryStore((s) => s.deviceOnlineStatus);
+
   const fetchDevices = async (filter?: 'P1' | 'P2' | 'P3') => {
     const results: DeviceNode[] = [];
 
@@ -60,42 +69,51 @@ export const DevicesScreen = () => {
       if (apiDevices !== null) {
         // Fetch telemetry for all devices we have access to
         for (const device of apiDevices) {
-          try {
-            const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(device.mac, 1);
-            const latest = history?.[0];
-            results.push({
-              id: String(device.id),
-              name: device.nombre_personalizado || device.mac,
-              mac: device.mac,
-              voltage: latest?.voltaje ?? 0,
-              current: latest?.corriente ?? 0,
-              watts: latest?.potencia ?? 0,
-              zone: latest ? classifyZone(latest.potencia, latest.ai_status) : 'Safe',
-              aiStatus: latest?.ai_status ?? 0,
-              isOnline: device.is_online,
-              isOn: device.estado_reportado,
-              isSyncing: device.estado_deseado !== device.estado_reportado,
-              automationLockActive: device.automation_lock_active,
-            });
-          } catch {
-            results.push({
-              id: String(device.id),
-              name: device.nombre_personalizado || device.mac,
-              mac: device.mac,
-              voltage: 0,
-              current: 0,
-              watts: 0,
-              zone: 'Safe',
-              aiStatus: 0,
-              isOnline: device.is_online,
-              isOn: device.estado_reportado,
-              isSyncing: device.estado_deseado !== device.estado_reportado,
-              automationLockActive: device.automation_lock_active,
-            });
+          const existingDevice = devicesRef.current.find(d => d.mac === device.mac);
+          const hasStoreData = useTelemetryStore.getState().latestReadings[device.mac] !== undefined;
+
+          let voltage = existingDevice?.voltage ?? 0;
+          let current = existingDevice?.current ?? 0;
+          let watts = existingDevice?.watts ?? 0;
+          let aiStatus = existingDevice?.aiStatus ?? 0;
+          let zone = existingDevice?.zone ?? 'Safe';
+
+          // ponytail: YAGNI/performance optimization - only fetch initial telemetry history once if not in store/already fetched
+          if (!hasStoreData && !existingDevice && !fetchedMacsRef.current[device.mac]) {
+            try {
+              const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(device.mac, 1);
+              const latest = history?.[0];
+              if (latest) {
+                voltage = latest.voltaje;
+                current = latest.corriente;
+                watts = latest.potencia;
+                aiStatus = latest.ai_status ?? 0;
+                zone = classifyZone(latest.potencia, latest.ai_status);
+              }
+            } catch {
+              // Ignore and keep 0s/defaults
+            }
+            fetchedMacsRef.current[device.mac] = true;
           }
+
+          results.push({
+            id: String(device.id),
+            name: device.nombre_personalizado || device.mac,
+            mac: device.mac,
+            voltage,
+            current,
+            watts,
+            zone,
+            aiStatus,
+            isOnline: device.is_online,
+            isOn: device.estado_reportado,
+            isSyncing: device.estado_deseado !== device.estado_reportado,
+            automationLockActive: device.automation_lock_active,
+          });
         }
         
         setDevices(results);
+        devicesRef.current = results;
         setIsLoading(false);
         return;
       }
@@ -104,56 +122,54 @@ export const DevicesScreen = () => {
     }
 
     for (const reg of DEVICE_REGISTRY) {
-      try {
-        const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(reg.mac, 1);
-        if (history && history.length > 0) {
-          const latest = history[0];
-          results.push({
-            id: reg.id,
-            name: reg.name,
-            mac: reg.mac,
-            voltage: latest.voltaje,
-            current: latest.corriente,
-            watts: latest.potencia,
-            zone: classifyZone(latest.potencia, latest.ai_status),
-            aiStatus: latest.ai_status ?? 0,
-            isOnline: true,
-            isOn: true,
-            isSyncing: false,
-          });
-        } else {
-          results.push({
-            id: reg.id,
-            name: reg.name,
-            mac: reg.mac,
-            voltage: 0,
-            current: 0,
-            watts: 0,
-            zone: 'Safe',
-            aiStatus: 0,
-            isOnline: false,
-            isOn: false,
-            isSyncing: false,
-          });
+      const existingDevice = devicesRef.current.find(d => d.mac === reg.mac);
+      const hasStoreData = useTelemetryStore.getState().latestReadings[reg.mac] !== undefined;
+
+      let voltage = existingDevice?.voltage ?? 0;
+      let current = existingDevice?.current ?? 0;
+      let watts = existingDevice?.watts ?? 0;
+      let aiStatus = existingDevice?.aiStatus ?? 0;
+      let zone = existingDevice?.zone ?? 'Safe';
+      let isOnline = existingDevice?.isOnline ?? false;
+      let isOn = existingDevice?.isOn ?? false;
+
+      // ponytail: YAGNI/performance optimization - only fetch initial telemetry history once if not in store/already fetched
+      if (!hasStoreData && !existingDevice && !fetchedMacsRef.current[reg.mac]) {
+        try {
+          const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(reg.mac, 1);
+          if (history && history.length > 0) {
+            const latest = history[0];
+            voltage = latest.voltaje;
+            current = latest.corriente;
+            watts = latest.potencia;
+            aiStatus = latest.ai_status ?? 0;
+            zone = classifyZone(latest.potencia, latest.ai_status);
+            isOnline = true;
+            isOn = true;
+          }
+        } catch {
+          // Keep defaults
         }
-      } catch {
-        results.push({
-          id: reg.id,
-          name: reg.name,
-          mac: reg.mac,
-          voltage: 0,
-          current: 0,
-          watts: 0,
-          zone: 'Safe',
-          aiStatus: 0,
-          isOnline: false,
-          isOn: false,
-          isSyncing: false,
-        });
+        fetchedMacsRef.current[reg.mac] = true;
       }
+
+      results.push({
+        id: reg.id,
+        name: reg.name,
+        mac: reg.mac,
+        voltage,
+        current,
+        watts,
+        zone,
+        aiStatus,
+        isOnline,
+        isOn,
+        isSyncing: false,
+      });
     }
 
     setDevices(results);
+    devicesRef.current = results;
     setIsLoading(false);
   };
 
@@ -182,11 +198,13 @@ export const DevicesScreen = () => {
       });
       
       if (updated) {
-        setDevices(prev => prev.map(d => 
+        const updatedDevices = devicesRef.current.map(d => 
           d.mac === editingDevice.mac 
             ? { ...d, name: updated.nombre_personalizado || d.mac }
             : d
-        ));
+        );
+        setDevices(updatedDevices);
+        devicesRef.current = updatedDevices;
         setEditingDevice(null);
         setEditName('');
       }
@@ -207,11 +225,13 @@ export const DevicesScreen = () => {
       });
       
       if (updated) {
-        setDevices(prev => prev.map(d => 
+        const updatedDevices = devicesRef.current.map(d => 
           d.mac === editingDevice.mac 
             ? { ...d, name: updated.nombre_personalizado || d.mac }
             : d
-        ));
+        );
+        setDevices(updatedDevices);
+        devicesRef.current = updatedDevices;
         setEditingDevice(null);
         setEditName('');
       }
@@ -343,6 +363,20 @@ export const DevicesScreen = () => {
     );
   };
 
+  const resolvedDevices = devices.map(device => {
+    const reading = latestReadings[device.mac];
+    const onlineFromStore = deviceOnlineStatus[device.mac];
+    return {
+      ...device,
+      voltage: reading?.voltaje ?? device.voltage,
+      current: reading?.corriente ?? device.current,
+      watts: reading?.potencia ?? device.watts,
+      aiStatus: reading?.ai_status ?? device.aiStatus,
+      zone: reading ? classifyZone(reading.potencia, reading.ai_status) : device.zone,
+      isOnline: onlineFromStore !== undefined ? onlineFromStore : device.isOnline,
+    };
+  });
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -417,7 +451,7 @@ export const DevicesScreen = () => {
         </View>
       ) : (
         <FlatList
-          data={devices}
+          data={resolvedDevices}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContainer}
