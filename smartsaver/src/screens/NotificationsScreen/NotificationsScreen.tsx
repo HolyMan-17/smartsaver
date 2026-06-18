@@ -33,15 +33,7 @@ export const NotificationsScreen = () => {
   }, [syncBackendNotifications]);
 
 
-  // Mark all notifications as read when entering the screen
-  useEffect(() => {
-    if (notifications.some(n => !n.read)) {
-      const timer = setTimeout(() => {
-        markAllAsRead();
-      }, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [notifications, markAllAsRead]);
+
 
   const handleClearAll = () => {
     Alert.alert(
@@ -52,7 +44,7 @@ export const NotificationsScreen = () => {
         { 
           text: 'Eliminar todas', 
           style: 'destructive', 
-          onPress: clearAll 
+          onPress: () => clearAll(false) 
         },
       ]
     );
@@ -213,15 +205,26 @@ export const NotificationsScreen = () => {
           </View>
         </View>
 
-        {/* Header clear all button */}
+        {/* Header actions */}
         {notifications.length > 0 && (
-          <TouchableOpacity 
-            style={styles.clearButton} 
-            onPress={handleClearAll}
-            activeOpacity={0.7}
-          >
-            <Feather name="trash-2" size={20} color="#EF4444" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {notifications.some(n => !n.read) && (
+              <TouchableOpacity 
+                style={[styles.clearButton, { marginRight: 8 }]} 
+                onPress={markAllAsRead}
+                activeOpacity={0.7}
+              >
+                <Feather name="check-circle" size={20} color="#3B82F6" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity 
+              style={styles.clearButton} 
+              onPress={handleClearAll}
+              activeOpacity={0.7}
+            >
+              <Feather name="trash-2" size={20} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 

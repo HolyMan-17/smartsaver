@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Alert } from 'react-native';
 import * as SecureStore from '../services/secureStore';
 import {
   loginWithAuth0,
@@ -8,7 +9,13 @@ import {
   logoutAuth0,
   revokeRefreshToken,
   authConfig,
+  clearTokens,
 } from '../services/authService';
+import { apiClient } from '../services/apiClient';
+import { useTelemetryStore } from './useTelemetryStore';
+import { useNotificationStore } from './useNotificationStore';
+import { useUserStore } from './useUserStore';
+import { useEventLogStore } from './useEventLogStore';
 import { AuthState } from '../types/auth';
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -24,6 +31,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const user = await getAuthUser();
+      if (!user) {
+        try { await clearTokens(); } catch {}
+        Alert.alert('Error de autenticación', 'No se pudo obtener el perfil. Intenta nuevamente.');
+        set({ isAuthenticated: false, user: null, isLoading: false });
+        return;
+      }
+
       set({
         isAuthenticated: true,
         user,
@@ -40,12 +54,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    try {
-      await revokeRefreshToken();
-    } catch {
-      // Best effort
-    }
-    await logoutAuth0();
+    try { await revokeRefreshToken(); } catch {}
+    try { await apiClient.updateUserSettings({ expo_push_token: null }); } catch {}
+    try { useTelemetryStore.getState().stopConnection(); } catch {}
+    try { useNotificationStore.getState().clearAll(true); } catch {}
+    try { useUserStore.getState().resetUser(); } catch {}
+    try { useEventLogStore.getState().clearLogs(); } catch {}
+    try { await logoutAuth0(); } catch (e) { console.warn('[Auth] logoutAuth0 failed', e); }
     set({ isAuthenticated: false, user: null });
   },
 
@@ -63,6 +78,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         if (Date.now() >= expiry) {
           const newTokens = await refreshAccessToken();
           if (!newTokens) {
+            try { await clearTokens(); } catch {}
             set({ isAuthenticated: false, isLoading: false });
             return;
           }
@@ -70,8 +86,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const user = await getAuthUser();
+      if (!user) {
+        try { await clearTokens(); } catch {}
+        if (__DEV__) console.warn('[Auth] rehydrate: getAuthUser returned null');
+        set({ isAuthenticated: false, user: null, isLoading: false });
+        return;
+      }
       set({ isAuthenticated: true, user, isLoading: false });
     } catch {
+      try { await clearTokens(); } catch {}
       set({ isAuthenticated: false, isLoading: false });
     }
   },

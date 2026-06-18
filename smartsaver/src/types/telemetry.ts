@@ -1,4 +1,4 @@
-export type BatteryZone = "Safe" | "Warning" | "Critical";
+
 
 export interface TelemetryReading {
   voltaje: number;
@@ -6,6 +6,7 @@ export interface TelemetryReading {
   potencia: number;
   tiempo_operacion_s: number;
   ai_status?: number;
+  receivedAt?: number;
 }
 
 export interface WSTelemetriaMessage {
@@ -17,7 +18,7 @@ export interface WSTelemetriaMessage {
 export interface WSConexionMessage {
   type: "conexion";
   mac: string;
-  data: { is_online: boolean };
+  data: { is_online?: boolean; estado_reportado?: boolean; is_encendido?: boolean };
 }
 
 export interface WSAlertaMessage {

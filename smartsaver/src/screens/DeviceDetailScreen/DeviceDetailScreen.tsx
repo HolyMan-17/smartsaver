@@ -58,9 +58,10 @@ export const DeviceDetailScreen = () => {
   const [isResolvingAlert, setIsResolvingAlert] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
-  // ponytail: integrate useTelemetryStore to read live readings and online status reactively, avoiding HTTP N+1 polling
   const liveReading = useTelemetryStore((s) => mac ? s.latestReadings[mac] : undefined);
   const liveOnline = useTelemetryStore((s) => mac ? s.deviceOnlineStatus[mac] : undefined);
+  const liveRelayState = useTelemetryStore((s) => mac ? s.relayStates[mac] : undefined);
+  const autoKillAtFromStore = useTelemetryStore((s) => mac ? s.autoKillStates[mac] ?? null : null);
 
   const isLoadingRef = useRef(isLoading);
   useEffect(() => {
@@ -69,6 +70,9 @@ export const DeviceDetailScreen = () => {
 
   // AI Auto-Kill States
   const [autoKillAt, setAutoKillAt] = useState<string | null>(null);
+  useEffect(() => {
+    setAutoKillAt(autoKillAtFromStore);
+  }, [autoKillAtFromStore]);
   const [autoKillCountdown, setAutoKillCountdown] = useState<string>('');
   const [isOverriding, setIsOverriding] = useState(false);
   const [automationLockActive, setAutomationLockActive] = useState(false);
@@ -86,10 +90,12 @@ export const DeviceDetailScreen = () => {
   const [limPotencia, setLimPotencia] = useState('');
   const [savedLimits, setSavedLimits] = useState<{v?: number, c?: number, p?: number}>({});
   const [deviceName, setDeviceName] = useState(name || 'Dispositivo Conectado');
+  const deviceNameRef = useRef(deviceName);
+  useEffect(() => { deviceNameRef.current = deviceName; }, [deviceName]);
   const [showNameModal, setShowNameModal] = useState(false);
   const [editName, setEditName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
-  const [priority, setPriority] = useState<string>('P2');
+  const [priority, setPriority] = useState<'P1' | 'P2' | 'P3'>('P2');
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
 
   // Keyboard modal states for manual entry
@@ -125,6 +131,7 @@ export const DeviceDetailScreen = () => {
   // Refs to avoid stale closures in interval
   const isOnRef = useRef(isOn);
   const savedLimitsRef = useRef<{v?: number, c?: number, p?: number}>({});
+  const lastManualToggleRef = useRef<number>(0);
 
   useEffect(() => {
     isOnRef.current = isOn;
@@ -202,6 +209,12 @@ export const DeviceDetailScreen = () => {
         if (parsed.v) setLimVoltaje(parsed.v.toString());
         if (parsed.c) setLimCorriente(parsed.c.toString());
         if (parsed.p) setLimPotencia(parsed.p.toString());
+      } else {
+        setSavedLimits({});
+        savedLimitsRef.current = {};
+        setLimVoltaje('');
+        setLimCorriente('');
+        setLimPotencia('');
       }
     } catch (e) {
       console.warn("Failed to load limits", e);
@@ -209,7 +222,7 @@ export const DeviceDetailScreen = () => {
   };
 
   // ponytail: extract telemetry processing into a reusable useCallback helper
-  const processTelemetry = React.useCallback((
+  const processTelemetry = React.useCallback(async (
     latest: { voltaje: number; corriente: number; potencia: number; ai_status?: number | null },
     hasActiveBmsAlert: boolean
   ) => {
@@ -222,13 +235,13 @@ export const DeviceDetailScreen = () => {
     if (prevZone.current !== null && prevZone.current !== newZone) {
       if (newZone === 'Warning') {
         const msg = `El consumo de energía alcanzó ${latest.potencia.toFixed(1)}W. La zona cambió de ${prevZone.current === 'Safe' ? 'Seguro' : 'Crítico'} a Riesgo.`;
-        addLog({ type: 'WARNING', title: 'Alto Consumo Detectado', message: msg, device_id: id, device_name: deviceName });
+        addLog({ type: 'WARNING', title: 'Alto Consumo Detectado', message: msg, device_id: id, device_name: deviceNameRef.current });
       } else if (newZone === 'Critical') {
         const msg = `El consumo de energía se disparó a ${latest.potencia.toFixed(1)}W. La IA marcó el dispositivo como CRÍTICO.`;
-        addLog({ type: 'CRITICAL', title: 'Alerta de Energía Crítica', message: msg, device_id: id, device_name: deviceName });
+        addLog({ type: 'CRITICAL', title: 'Alerta de Energía Crítica', message: msg, device_id: id, device_name: deviceNameRef.current });
       } else if (newZone === 'Safe' && prevZone.current !== 'Safe') {
         const msg = `Los niveles de energía se normalizaron a ${latest.potencia.toFixed(1)}W. El dispositivo volvió a la zona Segura.`;
-        addLog({ type: 'AI_ACTION', title: 'Zona Restaurada a Seguro', message: msg, device_id: id, device_name: deviceName });
+        addLog({ type: 'AI_ACTION', title: 'Zona Restaurada a Seguro', message: msg, device_id: id, device_name: deviceNameRef.current });
       }
     }
     prevZone.current = newZone;
@@ -248,15 +261,15 @@ export const DeviceDetailScreen = () => {
 
     if (voltageState !== prevVoltageState.current) {
       if (voltageState === 'sag') {
-        const msg = `Se detectó un bajón de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
-        addLog({ type: 'WARNING', title: 'Bajón de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
+        const msg = `Se detectó un bajón de voltaje en ${deviceNameRef.current}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
+        addLog({ type: 'WARNING', title: 'Bajón de Voltaje Detectado', message: msg, device_id: id, device_name: deviceNameRef.current });
       } else if (voltageState === 'spike') {
-        const msg = `Se detectó un pico de voltaje en ${deviceName}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
-        addLog({ type: 'CRITICAL', title: 'Pico de Voltaje Detectado', message: msg, device_id: id, device_name: deviceName });
+        const msg = `Se detectó un pico de voltaje en ${deviceNameRef.current}. Voltaje actual: ${latest.voltaje.toFixed(1)}V (nominal: ${NOMINAL_V}V).`;
+        addLog({ type: 'CRITICAL', title: 'Pico de Voltaje Detectado', message: msg, device_id: id, device_name: deviceNameRef.current });
       } else if (prevVoltageState.current !== 'normal') {
         const prevLabel = prevVoltageState.current === 'sag' ? 'bajón' : 'pico';
-        const msg = `El voltaje de ${deviceName} se normalizó a ${latest.voltaje.toFixed(1)}V tras un ${prevLabel}.`;
-        addLog({ type: 'AI_ACTION', title: 'Voltaje Normalizado', message: msg, device_id: id, device_name: deviceName });
+        const msg = `El voltaje de ${deviceNameRef.current} se normalizó a ${latest.voltaje.toFixed(1)}V tras un ${prevLabel}.`;
+        addLog({ type: 'AI_ACTION', title: 'Voltaje Normalizado', message: msg, device_id: id, device_name: deviceNameRef.current });
       }
       prevVoltageState.current = voltageState;
     }
@@ -271,7 +284,14 @@ export const DeviceDetailScreen = () => {
       // Enforce shutdown
       setIsOn(false); // Optimistic UI update
       if (mac) {
-        apiClient.setDeviceState(mac, false);
+        try {
+          await apiClient.setDeviceState(mac, false);
+        } catch (e: any) {
+          setIsOn(true); isOnRef.current = true;
+          Alert.alert('Apagado de Emergencia Fallido', `No se pudo apagar: ${e.message}. Verifica manualmente.`);
+          addLog({ type: 'CRITICAL', title: 'Apagado de Emergencia Fallido', message: `Fallo al apagar ${deviceNameRef.current} por limite excedido: ${e.message}.`, device_id: id, device_name: deviceNameRef.current });
+          return;
+        }
       }
       
       let reason = [];
@@ -280,31 +300,35 @@ export const DeviceDetailScreen = () => {
       if (overPower) reason.push(`Potencia (${latest.potencia.toFixed(1)}W > ${limits.p}W)`);
       
       const reasonMsg = reason.join(' y ');
-      const logMsg = `Apagado de emergencia para ${deviceName}. Se superó el umbral: ${reasonMsg}.`;
+      const logMsg = `Apagado de emergencia para ${deviceNameRef.current}. Se superó el umbral: ${reasonMsg}.`;
       
       addLog({ 
         type: 'CRITICAL', 
         title: 'Corte por Límite Excedido', 
         message: logMsg, 
         device_id: id, 
-        device_name: deviceName 
+        device_name: deviceNameRef.current 
       });
 
       Alert.alert(
         'Límite de Consumo Excedido',
-        `El dispositivo ${deviceName} ha sido apagado de emergencia por seguridad debido a: ${reasonMsg}.`,
+        `El dispositivo ${deviceNameRef.current} ha sido apagado de emergencia por seguridad debido a: ${reasonMsg}.`,
         [
           { text: 'OK', style: 'cancel' },
           { text: 'Revisar Umbrales', onPress: () => setShowLimitsModal(true) }
         ]
       );
     }
-  }, [deviceName, id, mac, addLog]);
+  }, [id, mac, addLog]);
+
+  const lastProcessedReceivedAt = useRef<number>(0);
 
   // Process real-time telemetry updates reactively when liveReading changes
   useEffect(() => {
     if (liveReading) {
-      processTelemetry(liveReading, activeBmsAlert !== null);
+      if (liveReading.receivedAt && liveReading.receivedAt === lastProcessedReceivedAt.current) return;
+      if (liveReading.receivedAt) lastProcessedReceivedAt.current = liveReading.receivedAt;
+      processTelemetry(liveReading, activeBmsAlert !== null).catch(console.error);
     }
   }, [liveReading, activeBmsAlert, processTelemetry]);
 
@@ -314,15 +338,15 @@ export const DeviceDetailScreen = () => {
       const newOnline = liveOnline;
       if (prevOnline.current !== null && prevOnline.current !== newOnline) {
         if (!newOnline) {
-          addLog({ type: 'CRITICAL', title: 'Dispositivo Desconectado', message: `Se perdió la conexión con ${deviceName}. El hardware ya no se reporta con la puerta de enlace.`, device_id: id, device_name: deviceName });
+          addLog({ type: 'CRITICAL', title: 'Dispositivo Desconectado', message: `Se perdió la conexión con ${deviceNameRef.current}. El hardware ya no se reporta con la puerta de enlace.`, device_id: id, device_name: deviceNameRef.current });
         } else {
-          addLog({ type: 'SYSTEM', title: 'Dispositivo Reconectado', message: `${deviceName} vuelve a estar en línea y reportando telemetría.`, device_id: id, device_name: deviceName });
+          addLog({ type: 'SYSTEM', title: 'Dispositivo Reconectado', message: `${deviceNameRef.current} vuelve a estar en línea y reportando telemetría.`, device_id: id, device_name: deviceNameRef.current });
         }
       }
       prevOnline.current = newOnline;
       setIsOnline(newOnline);
     }
-  }, [liveOnline, deviceName, id, addLog]);
+  }, [liveOnline, id, addLog]);
 
   const fetchDeviceData = async () => {
     if (!mac) return;
@@ -358,7 +382,12 @@ export const DeviceDetailScreen = () => {
     // Process telemetry
     if (telemetryResult && telemetryResult.length > 0) {
       const latest = telemetryResult[0];
-      processTelemetry(latest, hasActiveBmsAlert);
+      const liveReading = useTelemetryStore.getState().latestReadings[mac];
+      if (liveReading?.receivedAt && Date.now() - liveReading.receivedAt < 10000) {
+        // skip HTTP telemetry processing
+      } else {
+        processTelemetry(latest, hasActiveBmsAlert).catch(console.error);
+      }
     }
 
     // Process connection state
@@ -367,13 +396,17 @@ export const DeviceDetailScreen = () => {
     
     // Sync power state from backend
     if (connectionResult) {
-      setIsOn(connectionResult.estado_reportado);
-      isOnRef.current = connectionResult.estado_reportado;
+      const withinManualWindow = Date.now() - lastManualToggleRef.current < 5000;
+      if (!withinManualWindow) {
+        const resolvedIsOn = liveRelayState ?? connectionResult.estado_reportado;
+        setIsOn(resolvedIsOn);
+        isOnRef.current = resolvedIsOn;
+      }
       setIsSyncing(connectionResult.estado_deseado !== connectionResult.estado_reportado);
       setPriority(connectionResult.nivel_prioridad);
       
       const serverAutoKillAt = connectionResult.auto_kill_at;
-      setAutoKillAt(serverAutoKillAt);
+      useTelemetryStore.getState().setAutoKillFromHTTP(mac, serverAutoKillAt);
       
       setAutomationLockActive(connectionResult.automation_lock_active ?? false);
 
@@ -381,13 +414,6 @@ export const DeviceDetailScreen = () => {
     }
 
     // ── Log connection state changes ──
-    if (prevOnline.current !== null && prevOnline.current !== newOnline) {
-      if (!newOnline) {
-        addLog({ type: 'CRITICAL', title: 'Dispositivo Desconectado', message: `Se perdió la conexión con ${deviceName}. El hardware ya no se reporta con la puerta de enlace.`, device_id: id, device_name: deviceName });
-      } else {
-        addLog({ type: 'SYSTEM', title: 'Dispositivo Reconectado', message: `${deviceName} vuelve a estar en línea y reportando telemetría.`, device_id: id, device_name: deviceName });
-      }
-    }
     prevOnline.current = newOnline;
     setIsOnline(newOnline);
 
@@ -440,56 +466,54 @@ export const DeviceDetailScreen = () => {
     setIsSendingCommand(true);
     
     try {
-      const success = await apiClient.setDeviceState(mac, newState, override);
+      await apiClient.setDeviceState(mac, newState, override);
       setIsSendingCommand(false);
 
-      if (success) {
-        try {
-          useTelemetryStore.getState().recordManualToggle(mac);
-        } catch (e) {
-          console.warn('Failed to record manual toggle:', e);
-        }
-        setIsOn(newState);
-        setIsSyncing(true);
-        if (override) {
-          setAutomationLockActive(false);
-        }
-
-
-        // ── Log power toggle ──
-        addLog({
-          type: 'USER_ACTION',
-          title: newState ? 'Dispositivo Encendido' : 'Dispositivo Apagado',
-          message: `${userName || 'El usuario'} encendió/apagó remotamente ${deviceName} (${newState ? 'ON' : 'OFF'}) a través de la aplicación móvil.`,
-          device_id: id,
-          device_name: deviceName,
-        });
-
-        // Auto-resolve BMS alerts when user turns the device back ON
-        if (newState && activeBmsAlertsList.length > 0) {
-          let resolvedCount = 0;
-          for (const alert of activeBmsAlertsList) {
-            const ok = await apiClient.resolveAlert(alert.id);
-            if (ok) resolvedCount++;
-          }
-          if (resolvedCount > 0) {
-            setActiveBmsAlert(null);
-            setActiveBmsAlertsList([]);
-            addLog({
-              type: 'WARNING',
-              title: 'Alertas BMS Resueltas',
-              message: `El usuario encendió ${deviceName}, resolviendo ${resolvedCount} alerta(s) pendiente(s).`,
-              device_id: id,
-              device_name: deviceName,
-            });
-          }
-        }
-      } else {
-        addLog({ type: 'WARNING', title: 'Comando Fallido', message: `Fallo al encender/apagar ${deviceName}. El servidor no respondió.`, device_id: id, device_name: deviceName });
-        Alert.alert('Comando Fallido', 'No se pudo contactar al servidor. El estado del dispositivo no se cambió.');
+      lastManualToggleRef.current = Date.now();
+      setIsOn(newState);
+      setIsSyncing(true);
+      if (override) {
+        setAutomationLockActive(false);
       }
-    } catch (e) {
+
+      // ── Log power toggle ──
+      addLog({
+        type: 'USER_ACTION',
+        title: newState ? 'Dispositivo Encendido' : 'Dispositivo Apagado',
+        message: `${userName || 'El usuario'} encendió/apagó remotamente ${deviceName} (${newState ? 'ON' : 'OFF'}) a través de la aplicación móvil.`,
+        device_id: id,
+        device_name: deviceName,
+      });
+
+      // Auto-resolve BMS alerts when user turns the device back ON
+      if (newState && activeBmsAlertsList.length > 0) {
+        let resolvedCount = 0;
+        for (const alert of activeBmsAlertsList) {
+          try {
+            await apiClient.resolveAlert(alert.id);
+            resolvedCount++;
+          } catch (err: any) {
+            console.error("Failed to auto-resolve alert", err);
+            Alert.alert('Error', err.message || 'No se pudo resolver la alerta BMS.');
+          }
+        }
+        if (resolvedCount > 0) {
+          setActiveBmsAlert(null);
+          setActiveBmsAlertsList([]);
+          addLog({
+            type: 'WARNING',
+            title: 'Alertas BMS Resueltas',
+            message: `El usuario encendió ${deviceName}, resolviendo ${resolvedCount} alerta(s) pendiente(s).`,
+            device_id: id,
+            device_name: deviceName,
+          });
+        }
+      }
+    } catch (e: any) {
       setIsSendingCommand(false);
+      setIsOn(!newState);
+      addLog({ type: 'WARNING', title: 'Comando Fallido', message: `Fallo al encender/apagar ${deviceName}: ${e.message}`, device_id: id, device_name: deviceName });
+      Alert.alert('Comando Fallido', e.message || 'No se pudo contactar al servidor. El estado del dispositivo no se cambió.');
       console.error("Failed to execute power toggle", e);
     }
   };
@@ -530,10 +554,10 @@ export const DeviceDetailScreen = () => {
     if (limPotencia.trim()) limits.limite_potencia = parseFloat(limPotencia);
 
     setIsSendingCommand(true);
-    const success = await apiClient.setDeviceLimits(mac, limits);
-    setIsSendingCommand(false);
+    try {
+      await apiClient.setDeviceLimits(mac, limits);
+      setIsSendingCommand(false);
 
-    if (success) {
       setShowLimitsModal(false);
       const parts = [];
       const newLimits: {v?: number, c?: number, p?: number} = {};
@@ -557,31 +581,32 @@ export const DeviceDetailScreen = () => {
       addLog({
         type: 'USER_ACTION',
         title: 'Límites de Seguridad Actualizados',
-        message: `Nuevos umbrales establecidos para ${deviceName}: ${parts.join(', ') || 'sin cambios'}.`,
+        message: `Nuevos umbrales establecidos para ${deviceNameRef.current}: ${parts.join(', ') || 'sin cambios'}.`,
         device_id: id,
-        device_name: deviceName,
+        device_name: deviceNameRef.current,
       });
       Alert.alert('Límites Actualizados', 'Se enviaron los umbrales de seguridad a la puerta de enlace.');
-    } else {
-      Alert.alert('Comando Fallido', 'No se pudieron guardar los límites. Comprueba tu conexión.');
+    } catch (e: any) {
+      setIsSendingCommand(false);
+      Alert.alert('Error', e.message || 'No se pudieron guardar los límites. Comprueba tu conexión.');
     }
   };
 
   const getZoneColor = (z: Zone) => {
     switch (z) {
-      case 'Safe': return '#10B981';
-      case 'Warning': return '#F59E0B';
-      case 'Critical': return '#EF4444';
-      default: return '#64748B';
+      case 'Safe': return colors.zoneSafeText;
+      case 'Warning': return colors.zoneWarningText;
+      case 'Critical': return colors.zoneCriticalText;
+      default: return colors.textSecondary;
     }
   };
 
   const getZoneBgColor = (z: Zone) => {
     switch (z) {
-      case 'Safe': return '#ECFDF5';
-      case 'Warning': return '#FFFBEB';
-      case 'Critical': return '#FEF2F2';
-      default: return '#F1F5F9';
+      case 'Safe': return colors.zoneSafeBg;
+      case 'Warning': return colors.zoneWarningBg;
+      case 'Critical': return colors.zoneCriticalBg;
+      default: return colors.borderSoft;
     }
   };
 
@@ -843,9 +868,9 @@ export const DeviceDetailScreen = () => {
         {/* --- AUTO-KILL COUNTDOWN BANNER --- */}
         {autoKillAt && autoKillCountdown ? (
           <View style={{ 
-            borderColor: '#F59E0B', 
+            borderColor: colors.autoKillBorder, 
             borderWidth: 1.5, 
-            backgroundColor: '#FEF3C7', 
+            backgroundColor: colors.autoKillBg, 
             marginHorizontal: 16, 
             marginBottom: 16, 
             borderRadius: 16, 
@@ -853,13 +878,13 @@ export const DeviceDetailScreen = () => {
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                <Feather name="clock" size={24} color="#D97706" style={{ marginRight: 10 }} />
+                <Feather name="clock" size={24} color={colors.autoKillText} style={{ marginRight: 10 }} />
                 <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#B45309' }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.autoKillText }}>
                     Apagado programado (IA)
                   </Text>
-                  <Text style={{ fontSize: 12, color: '#D97706', marginTop: 2 }}>
-                    Riesgo prolongado. Apagando en: <Text style={{ fontWeight: '800', color: '#B45309' }}>{autoKillCountdown}</Text>
+                  <Text style={{ fontSize: 12, color: colors.autoKillText, marginTop: 2 }}>
+                    Riesgo prolongado. Apagando en: <Text style={{ fontWeight: '800', color: colors.autoKillText }}>{autoKillCountdown}</Text>
                   </Text>
                 </View>
               </View>
@@ -910,23 +935,23 @@ export const DeviceDetailScreen = () => {
           <View style={[
             styles.aiCard,
             activeBmsAlert !== null && {
-              borderColor: '#EF4444',
+              borderColor: colors.zoneCriticalText,
               borderWidth: 2,
-              backgroundColor: '#FEF2F2',
+              backgroundColor: colors.bmsAlertBg,
             }
           ]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
               <View style={styles.aiHeader}>
-                <Feather name="cpu" size={16} color={activeBmsAlert ? '#EF4444' : '#64748B'} />
-                <Text style={[styles.aiTitle, activeBmsAlert !== null && { color: '#991B1B' }]}>Seguridad IA</Text>
+                <Feather name="cpu" size={16} color={activeBmsAlert ? colors.bmsAlertText : colors.textSecondary} />
+                <Text style={[styles.aiTitle, activeBmsAlert !== null && { color: colors.bmsAlertText }]}>Seguridad IA</Text>
               </View>
               <View style={[
                 styles.zoneTextContainer, 
-                { backgroundColor: activeBmsAlert ? '#FEE2E2' : (isOn && isOnline ? getZoneBgColor(zone) : '#F1F5F9') }
+                { backgroundColor: activeBmsAlert ? colors.bmsAlertBg : (isOn && isOnline ? getZoneBgColor(zone) : colors.borderSoft) }
               ]}>
                 <Text style={[
                   styles.zoneText, 
-                  { color: activeBmsAlert ? '#EF4444' : (isOn && isOnline ? zoneColor : '#94A3B8') }
+                  { color: activeBmsAlert ? colors.bmsAlertText : (isOn && isOnline ? zoneColor : colors.textSecondary) }
                 ]}>
                   {activeBmsAlert ? 'CRÍTICO' : (!isOnline ? 'SIN SEÑAL' : isOn ? (zone === 'Safe' ? 'SEGURO' : zone === 'Warning' ? 'RIESGO' : 'CRÍTICO') : 'EN ESPERA')}
                 </Text>
@@ -935,24 +960,24 @@ export const DeviceDetailScreen = () => {
             
             {activeBmsAlert ? (
               <View style={{ marginTop: 10, width: '100%' }}>
-                <Text style={{ fontSize: 12, color: '#991B1B', fontWeight: '600', lineHeight: 17, marginBottom: 10 }}>
+                <Text style={{ fontSize: 12, color: colors.bmsAlertText, fontWeight: '600', lineHeight: 17, marginBottom: 10 }}>
                   {activeBmsAlert.mensaje || 'Se ha detectado una condición crítica en el dispositivo (BMS thermal shutdown) y la IA del sistema ha forzado un apagado preventivo inmediato. El control remoto permanecerá deshabilitado por seguridad.'}
                 </Text>
                 
                 {resolveError && (
-                  <Text style={{ fontSize: 11, color: '#DC2626', fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
+                  <Text style={{ fontSize: 11, color: colors.bmsAlertText, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
                     {resolveError}
                   </Text>
                 )}
 
                 <TouchableOpacity
                   style={{
-                    backgroundColor: '#EF4444',
+                    backgroundColor: colors.bmsAlertText,
                     borderRadius: 10,
                     paddingVertical: 10,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    shadowColor: '#EF4444',
+                    shadowColor: colors.bmsAlertText,
                     shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.15,
                     shadowRadius: 4,
@@ -967,26 +992,24 @@ export const DeviceDetailScreen = () => {
                     setResolveError(null);
                     try {
                       // Resolve all active BMS alerts for this device concurrently
-                      const results = await Promise.all(
+                      await Promise.all(
                         activeBmsAlertsList.map(a => apiClient.resolveAlert(a.id))
                       );
-                      const success = results.length > 0 && results.every(res => res === true);
+                      const success = true;
                       if (success) {
                         setActiveBmsAlert(null);
                         setActiveBmsAlertsList([]);
                         addLog({
                           type: 'USER_ACTION',
                           title: 'Alerta BMS Confirmada',
-                          message: `${userName || 'El usuario'} confirmó y restableció las alertas BMS críticas para "${deviceName}".`,
+                          message: `${userName || 'El usuario'} confirmó y restableció las alertas BMS críticas para "${deviceNameRef.current}".`,
                           device_id: id,
-                          device_name: deviceName,
+                          device_name: deviceNameRef.current,
                         });
                         await fetchDeviceData();
-                      } else {
-                        setResolveError('Error: No se pudieron restablecer todas las alertas. Intente de nuevo.');
                       }
-                    } catch {
-                      setResolveError('Error: Fallo de red. Compruebe su conexión e intente de nuevo.');
+                    } catch (e: any) {
+                      setResolveError(`Error: ${e.message || 'Fallo de red. Compruebe su conexión e intente de nuevo.'}`);
                     } finally {
                       setIsResolvingAlert(false);
                     }

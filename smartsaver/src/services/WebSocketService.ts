@@ -41,6 +41,9 @@ class WebSocketService {
       }
     }
 
+    if (!this.shouldReconnect) return;
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
+
     this.ws = new WebSocket(connectUrl);
 
     this.ws.onopen = () => {
@@ -51,14 +54,24 @@ class WebSocketService {
     this.ws.onmessage = (event) => {
       try {
         const data: WSMessage = JSON.parse(event.data);
+        const KNOWN_TYPES = ['telemetria', 'conexion', 'alerta', 'auto_kill_warning', 'auto_kill_executed', 'auto_kill_cancelled'];
+        if (!data || typeof data.type !== 'string' || !KNOWN_TYPES.includes(data.type)) {
+          if (__DEV__) console.warn('[WS] unknown message type:', data?.type);
+          return;
+        }
+        if (typeof data.mac !== 'string') {
+          if (__DEV__) console.warn('[WS] missing mac:', data);
+          return;
+        }
         this.notifyMessageListeners(data);
       } catch {
-        // Ignore malformed messages
+        if (__DEV__) console.warn('[WS] malformed message:', event.data);
       }
     };
 
     this.ws.onerror = () => {
-      // Error details are logged via onclose
+      // Error details are logged via onclose — don't log the raw event (leaks token in URL)
+      if (__DEV__) console.warn('[WS] connection error occurred');
     };
 
     this.ws.onclose = (event) => {
@@ -71,6 +84,8 @@ class WebSocketService {
         useAuthStore.getState().logout();
         return;
       }
+
+      this.reconnectInterval = Math.min(this.reconnectInterval * 1.5, this.maxReconnectInterval);
 
       if (this.shouldReconnect) {
         this.attemptReconnect();
@@ -89,7 +104,6 @@ class WebSocketService {
     setTimeout(() => {
       if (this.shouldReconnect) {
         this.connect();
-        this.reconnectInterval = Math.min(this.reconnectInterval * 1.5, this.maxReconnectInterval);
       }
     }, this.reconnectInterval);
   }

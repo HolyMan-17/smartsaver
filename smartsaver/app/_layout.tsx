@@ -16,10 +16,13 @@ import { useAuthStore } from '../src/store/useAuthStore';
 import { apiClient, setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
 import { useTelemetryStore } from '../src/store/useTelemetryStore';
+import '../src/utils/backgroundNotificationTask';
 
 // Must be at app root level so it intercepts the Auth0 callback
 // deep link BEFORE Expo Router tries to match it as a route.
 WebBrowser.maybeCompleteAuthSession();
+
+let lastNotifSyncAt = 0;
 
 export const unstable_settings = {
   anchor: 'index',
@@ -114,18 +117,27 @@ export default function RootLayout() {
             if (token) {
               await apiClient.updateUserSettings({ expo_push_token: token });
             }
+          } else {
+            try { await apiClient.updateUserSettings({ expo_push_token: null }); } catch (e) { console.warn('Failed to clear push token', e); }
           }
         } catch (e) {
           console.warn('Failed to register push token:', e);
         }
       })();
 
+      if (Date.now() - lastNotifSyncAt > 30000) {
+        lastNotifSyncAt = Date.now();
+        useNotificationStore.getState().syncBackendNotifications().catch(e => console.warn('notif sync failed', e));
+      }
+
     } else {
       stopConnection();
     }
   }, [isAuthenticated, startConnection, stopConnection]);
 
-  if (isLoading) {
+  const themeHydrated = useThemeStore((state) => state._hasHydrated);
+
+  if (isLoading || !themeHydrated) {
     return (
       <SafeAreaProvider>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>

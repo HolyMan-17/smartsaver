@@ -56,6 +56,7 @@ export const DevicesScreen = () => {
   const fetchedMacsRef = useRef<Record<string, boolean>>({});
   // ponytail: YAGNI/performance optimization - keep track of latest devices in a ref to avoid stale closures in setInterval callbacks
   const devicesRef = useRef<DeviceNode[]>([]);
+  const optimisticNameRef = useRef<{ mac: string; name: string; expiresAt: number } | null>(null);
 
   const latestReadings = useTelemetryStore((s) => s.latestReadings);
   const deviceOnlineStatus = useTelemetryStore((s) => s.deviceOnlineStatus);
@@ -96,9 +97,18 @@ export const DevicesScreen = () => {
             fetchedMacsRef.current[device.mac] = true;
           }
 
+          const opt = optimisticNameRef.current;
+          const name = (opt && opt.mac === device.mac && Date.now() < opt.expiresAt) 
+            ? opt.name 
+            : (device.nombre_personalizado || device.mac);
+          
+          if (opt && Date.now() >= opt.expiresAt) {
+            optimisticNameRef.current = null;
+          }
+
           results.push({
             id: String(device.id),
-            name: device.nombre_personalizado || device.mac,
+            name: name,
             mac: device.mac,
             voltage,
             current,
@@ -198,6 +208,7 @@ export const DevicesScreen = () => {
       });
       
       if (updated) {
+        optimisticNameRef.current = { mac: editingDevice.mac, name: trimmed, expiresAt: Date.now() + 10000 };
         const updatedDevices = devicesRef.current.map(d => 
           d.mac === editingDevice.mac 
             ? { ...d, name: updated.nombre_personalizado || d.mac }
@@ -225,6 +236,7 @@ export const DevicesScreen = () => {
       });
       
       if (updated) {
+        optimisticNameRef.current = { mac: editingDevice.mac, name: updated.nombre_personalizado || editingDevice.mac, expiresAt: Date.now() + 10000 };
         const updatedDevices = devicesRef.current.map(d => 
           d.mac === editingDevice.mac 
             ? { ...d, name: updated.nombre_personalizado || d.mac }
@@ -244,10 +256,10 @@ export const DevicesScreen = () => {
 
   const getZoneStyles = (zone: string) => {
     switch (zone) {
-      case 'Safe': return { color: '#10B981', bg: '#ECFDF5' };
-      case 'Warning': return { color: '#F59E0B', bg: '#FFFBEB' };
-      case 'Critical': return { color: '#EF4444', bg: '#FEF2F2' };
-      default: return { color: '#94A3B8', bg: '#F8FAFC' };
+      case 'Safe': return { color: colors.zoneSafeText, bg: colors.zoneSafeBg };
+      case 'Warning': return { color: colors.zoneWarningText, bg: colors.zoneWarningBg };
+      case 'Critical': return { color: colors.zoneCriticalText, bg: colors.zoneCriticalBg };
+      default: return { color: colors.textSecondary, bg: colors.borderSoft };
     }
   };
 
@@ -265,41 +277,41 @@ export const DevicesScreen = () => {
 
   const getAiStatusDetails = (item: DeviceNode) => {
     if (!item.isOnline) {
-      return { label: 'IA: SIN SEÑAL', color: '#94A3B8', bg: '#F1F5F9' };
+      return { label: 'IA: SIN SEÑAL', color: colors.textSecondary, bg: colors.borderSoft };
     }
     if (!item.isOn) {
-      return { label: 'IA: EN ESPERA', color: '#94A3B8', bg: '#F1F5F9' };
+      return { label: 'IA: EN ESPERA', color: colors.textSecondary, bg: colors.borderSoft };
     }
     switch (item.aiStatus) {
       case 1:
-        return { label: 'IA: RIESGO', color: '#D97706', bg: '#FEF3C7' };
+        return { label: 'IA: RIESGO', color: colors.zoneWarningText, bg: colors.zoneWarningBg };
       case 2:
-        return { label: 'IA: CRÍTICO', color: '#DC2626', bg: '#FEE2E2' };
+        return { label: 'IA: CRÍTICO', color: colors.zoneCriticalText, bg: colors.zoneCriticalBg };
       case 0:
       default:
-        return { label: 'IA: SEGURO', color: '#059669', bg: '#D1FAE5' };
+        return { label: 'IA: SEGURO', color: colors.zoneSafeText, bg: colors.zoneSafeBg };
     }
   };
 
   const getPhysicalStatus = (item: DeviceNode) => {
     if (!item.isOnline) {
-      return { label: 'SIN SEÑAL', color: '#EF4444', dotColor: '#EF4444' };
+      return { label: 'SIN SEÑAL', color: colors.zoneCriticalText, dotColor: colors.zoneCriticalText };
     }
     if (item.isSyncing) {
-      return { label: 'SINCRONIZANDO...', color: '#F59E0B', dotColor: '#F59E0B' };
+      return { label: 'SINCRONIZANDO...', color: colors.zoneWarningText, dotColor: colors.zoneWarningText };
     }
     if (!item.isOn) {
-      return { label: 'EN ESPERA', color: '#64748B', dotColor: '#64748B' };
+      return { label: 'EN ESPERA', color: colors.textSecondary, dotColor: colors.textSecondary };
     }
-    return { label: 'CONECTADO', color: '#10B981', dotColor: '#10B981' };
+    return { label: 'CONECTADO', color: colors.zoneSafeText, dotColor: colors.zoneSafeText };
   };
 
   const getIconStyles = (item: DeviceNode) => {
     if (!item.isOnline) {
-      return { color: '#94A3B8', bg: '#F1F5F9' };
+      return { color: colors.textSecondary, bg: colors.borderSoft };
     }
     if (!item.isOn) {
-      return { color: '#64748B', bg: '#F1F5F9' };
+      return { color: colors.textSecondary, bg: colors.borderSoft };
     }
     return getZoneStyles(item.zone);
   };
@@ -382,7 +394,7 @@ export const DevicesScreen = () => {
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
-            <Feather name="arrow-left" size={24} color="#0F172A" />
+            <Feather name="arrow-left" size={24} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity 
             onPress={() => setShowFilter(!showFilter)} 

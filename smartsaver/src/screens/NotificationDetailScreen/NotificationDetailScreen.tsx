@@ -14,7 +14,12 @@ export const NotificationDetailScreen = () => {
   const styles = getStyles(colors);
 
   const notifications = useNotificationStore((s) => s.notifications);
+  const markAsRead = useNotificationStore((s) => s.markAsRead);
   const notification = notifications.find(n => n.id === id);
+
+  React.useEffect(() => {
+    if (notification && !notification.read) markAsRead(notification.id);
+  }, [notification, markAsRead]);
 
   if (!notification) {
     return (

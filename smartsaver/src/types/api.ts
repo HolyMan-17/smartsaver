@@ -16,7 +16,7 @@ export interface DispositivoResponse {
   id: number;
   mac: string;
   nombre_personalizado: string | null;
-  nivel_prioridad: string;
+  nivel_prioridad: 'P1' | 'P2' | 'P3';
   limite_consumo_w: number;
   limite_voltaje: number | null;
   limite_corriente: number | null;
@@ -33,6 +33,7 @@ export interface DispositivoResponse {
 }
 
 export interface HorarioBase {
+  /** ISO 8601 day numbers: 1=Mon, 2=Tue, ..., 6=Sat, 7=Sun. */
   dias_operacion: number[];
   hora_encendido: string | null; // Format "HH:mm:ss"
   hora_apagado: string | null;   // Format "HH:mm:ss"
@@ -48,13 +49,17 @@ export interface HorarioResponse extends HorarioBase {
 export interface UserSettingsResponse {
   ai_control_habilitado: boolean;
   auto_apagado_low_priority: boolean;
-  expo_push_token?: string;
+  expo_push_token?: string | null;
+  notificaciones_criticas?: boolean;
+  notificaciones_advertencias?: boolean;
 }
 
 export interface UserSettingsUpdate {
   ai_control_habilitado?: boolean;
   auto_apagado_low_priority?: boolean;
-  expo_push_token?: string;
+  expo_push_token?: string | null;
+  notificaciones_criticas?: boolean;
+  notificaciones_advertencias?: boolean;
 }
 
 export interface AIOverrideResponse {
@@ -73,9 +78,9 @@ export interface AgregadosResponse {
 export interface AlertaResponse {
   id: number;
   id_artefacto: number;
-  tipo_alerta: string;
+  tipo_alerta: 'bms_critica' | 'over_voltage' | 'over_current' | 'over_power' | 'voltage_sag' | 'voltage_spike' | string;
   mensaje: string;
-  severidad: string;
+  severidad: 'info' | 'warning' | 'critical' | string;
   leido: boolean;
   resuelto: boolean;
   timestamp: string;
@@ -85,7 +90,8 @@ export interface EventoResponse {
   id: number;
   id_artefacto: number;
   id_usuario: number;
-  accion: string;
+  /** Backend-defined action enum — see api_spec.md */
+  accion: 'command_on' | 'command_off' | 'bms_shutdown' | 'limit_exceeded' | 'schedule_trigger' | string;
   razon_disparo: string;
   timestamp: string;
 }
@@ -107,10 +113,6 @@ export interface RecomendacionResponse {
 // ─── Request / Command Schemas ───────────────────────────
 // MAC is in the URL path, not in request bodies
 
-export interface DispositivoEstadoCommand {
-  encendido: boolean;
-}
-
 export interface DispositivoLimitesCommand {
   limite_consumo_w?: number;
   limite_voltaje?: number | null;
@@ -125,7 +127,7 @@ export interface ComandoEstado {
 
 export interface DispositivoUpdateCommand {
   nombre_personalizado?: string | null;
-  nivel_prioridad?: string;
+  nivel_prioridad?: 'P1' | 'P2' | 'P3';
   limite_consumo_w?: number;
   limite_voltaje?: number | null;
   limite_corriente?: number | null;

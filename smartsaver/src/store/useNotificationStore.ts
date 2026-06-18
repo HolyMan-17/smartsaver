@@ -10,6 +10,7 @@ export interface NotificationItem {
   body: string;
   timestamp: string; // ISO string
   read: boolean;
+  lastReadAt?: number;
   data?: any;
 }
 
@@ -17,10 +18,9 @@ interface NotificationState {
   notifications: NotificationItem[];
   addNotification: (title: string, body: string, data?: any) => void;
   markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
+  markAllAsRead: () => Promise<void>;
   deleteNotification: (id: string) => void;
-  clearAll: () => void;
-  getUnreadCount: () => number;
+  clearAll: (localOnly?: boolean) => void;
   syncBackendNotifications: () => Promise<void>;
 }
 
@@ -71,28 +71,30 @@ export const useNotificationStore = create<NotificationState>()(
       markAsRead: (id) => {
         set((state) => ({
           notifications: state.notifications.map((n) =>
-            n.id === id ? { ...n, read: true } : n
+            n.id === id ? { ...n, read: true, lastReadAt: Date.now() } : n
           ),
         }));
         if (id.startsWith('db_')) {
           const backendId = parseInt(id.replace('db_', ''), 10);
-          apiClient.markNotificationRead(backendId).catch(console.error);
+          if (!Number.isFinite(backendId)) { console.warn('[Notif] invalid db ID:', id); return; }
+          apiClient.markNotificationRead(backendId).catch(e => console.warn('[Notif]', e.message));
         }
       },
 
-      markAllAsRead: () => {
+      markAllAsRead: async () => {
         const state = get();
         const unreadDbIds = state.notifications
           .filter((n) => !n.read && n.id.startsWith('db_'))
-          .map((n) => parseInt(n.id.replace('db_', ''), 10));
+          .map((n) => parseInt(n.id.replace('db_', ''), 10))
+          .filter((id) => Number.isFinite(id));
 
-        set((state) => ({
-          notifications: state.notifications.map((n) => ({ ...n, read: true })),
+        set((s) => ({
+          notifications: s.notifications.map((n) => ({ ...n, read: true })),
         }));
 
-        for (const backendId of unreadDbIds) {
-          apiClient.markNotificationRead(backendId).catch(console.error);
-        }
+        const results = await Promise.allSettled(unreadDbIds.map(id => apiClient.markNotificationRead(id)));
+        const failedCount = results.filter(r => r.status === 'rejected').length;
+        if (failedCount > 0) console.warn(`[Notif] ${failedCount}/${unreadDbIds.length} mark-read failed`);
       },
 
       deleteNotification: (id) => {
@@ -101,17 +103,14 @@ export const useNotificationStore = create<NotificationState>()(
         }));
         if (id.startsWith('db_')) {
           const backendId = parseInt(id.replace('db_', ''), 10);
-          apiClient.deleteNotification(backendId).catch(console.error);
+          if (!Number.isFinite(backendId)) { console.warn('[Notif] invalid db ID:', id); return; }
+          apiClient.deleteNotification(backendId).catch(e => console.warn('[Notif]', e.message));
         }
       },
 
-      clearAll: () => {
+      clearAll: (localOnly = false) => {
         set({ notifications: [] });
-        apiClient.clearAllNotifications().catch(console.error);
-      },
-
-      getUnreadCount: () => {
-        return get().notifications.filter((n) => !n.read).length;
+        if (!localOnly) apiClient.clearAllNotifications().catch(e => console.warn('[Notif]', e.message));
       },
 
       syncBackendNotifications: async () => {
@@ -119,28 +118,51 @@ export const useNotificationStore = create<NotificationState>()(
           const dbNotifs = await apiClient.getNotifications();
           if (!dbNotifs) return;
 
-          const mapped: NotificationItem[] = dbNotifs.map((n: NotificacionUsuarioResponse) => ({
-            id: `db_${n.id}`,
-            title: n.titulo,
-            body: n.cuerpo,
-            timestamp: n.timestamp,
-            read: n.leido,
-            data: { backendId: n.id },
-          }));
+          const mapped: NotificationItem[] = dbNotifs
+            .filter((n: NotificacionUsuarioResponse) => !n.eliminado)
+            .map((n: NotificacionUsuarioResponse) => ({
+              id: `db_${n.id}`,
+              title: n.titulo,
+              body: n.cuerpo,
+              timestamp: n.timestamp,
+              read: n.leido,
+              data: { backendId: n.id },
+            }));
 
           set((state) => {
+            const existingDbMap = new Map(state.notifications.filter(n => n.id.startsWith('db_')).map(n => [n.id, n]));
+            const merged = mapped.map(m => {
+              const existing = existingDbMap.get(m.id);
+              if (existing?.read && existing.lastReadAt && existing.lastReadAt > Date.now() - 60000) {
+                return { ...m, read: true, lastReadAt: existing.lastReadAt };
+              }
+              return m;
+            });
+
             const existingList = state.notifications;
             const localNotifications = existingList.filter((n) => !n.id.startsWith('db_'));
             
             // Rebuild list combining local notifications and currently valid server notifications.
-            const combined = [...localNotifications, ...mapped];
+            const combined = [...localNotifications, ...merged];
+
+            const dbBackendIds = new Set(merged.map(m => m.data?.backendId).filter(Boolean));
+            const dbTitleBodyKeys = new Set(merged.map(m => `${m.title}||${m.body}`));
+            const deduped = combined.filter(n => {
+              if (!n.id.startsWith('notif_')) return true;
+              if (n.data?.backendId && dbBackendIds.has(n.data.backendId)) return false;
+              if (dbTitleBodyKeys.has(`${n.title}||${n.body}`)) {
+                const ageMs = Date.now() - new Date(n.timestamp).getTime();
+                if (ageMs < 300000) return false;
+              }
+              return true;
+            });
 
             // Sort by timestamp descending
-            combined.sort(
+            deduped.sort(
               (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             );
 
-            const updated = combined.slice(0, MAX_NOTIFICATIONS);
+            const updated = deduped.slice(0, MAX_NOTIFICATIONS);
             return { notifications: updated };
           });
         } catch (e) {
@@ -151,6 +173,7 @@ export const useNotificationStore = create<NotificationState>()(
     {
       name: 'smartsaver-notifications-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ notifications: state.notifications }),
     }
   )
 );

@@ -52,6 +52,7 @@ export const useEventLogStore = create<EventLogState>()(
     {
       name: 'event-logs-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ logs: state.logs }),
     }
   )
 );

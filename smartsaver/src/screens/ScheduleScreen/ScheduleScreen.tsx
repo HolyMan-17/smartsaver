@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { apiClient } from "../../services/apiClient";
+import { HorarioBase } from "../../types/api";
 import { getStyles } from "./ScheduleScreen.styles";
 import { useThemeStore, getColors } from "../../store/useThemeStore";
 import { CustomSwitch } from "../../../components/ui/CustomSwitch";
@@ -73,6 +74,12 @@ export const ScheduleScreen = () => {
 
   // Automation / Active state
   const [automationEnabled, setAutomationEnabled] = useState(true);
+  const currentScheduleRef = useRef<HorarioBase>({
+    dias_operacion: [1, 2, 3, 4, 5],
+    hora_encendido: "08:00:00",
+    hora_apagado: "18:00:00",
+    automatizacion_activa: true,
+  });
 
   // Schedule state
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -88,6 +95,12 @@ export const ScheduleScreen = () => {
   const handleToggleAutomation = async (value: boolean) => {
     try {
       setAutomationEnabled(value);
+      
+      if (mac) {
+        const payload = { ...currentScheduleRef.current, automatizacion_activa: value };
+        await apiClient.updateDeviceSchedule(mac, payload);
+        currentScheduleRef.current = payload;
+      }
 
       const deviceName = name || "Dispositivo";
       // Log user action in event logs
@@ -99,6 +112,7 @@ export const ScheduleScreen = () => {
         device_name: deviceName,
       });
     } catch (e) {
+      setAutomationEnabled(!value);
       console.error("Failed to save automation state", e);
       Alert.alert(
         "Error",
@@ -196,6 +210,7 @@ export const ScheduleScreen = () => {
       if (!mac) return;
       const schedule = await apiClient.getDeviceSchedule(mac);
       if (schedule) {
+        currentScheduleRef.current = schedule;
         setAutomationEnabled(schedule.automatizacion_activa);
         setSelectedDays(schedule.dias_operacion.map(mapDayFromBackend).sort());
 
@@ -239,6 +254,7 @@ export const ScheduleScreen = () => {
         hora_apagado,
         automatizacion_activa: automationEnabled,
       };
+      currentScheduleRef.current = payload;
 
       if (!mac) throw new Error("Falta la dirección MAC del dispositivo.");
 

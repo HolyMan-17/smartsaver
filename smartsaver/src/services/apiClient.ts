@@ -2,6 +2,7 @@ import {
   TelemetriaResponse,
   DispositivoResponse,
   DispositivoLimitesCommand,
+  ComandoEstado,
   DispositivoUpdateCommand,
   DispositivoDeleteResponse,
   AgregadosResponse,
@@ -34,18 +35,30 @@ async function authenticatedFetch(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
-  const token = getAccessTokenFn ? await getAccessTokenFn() : null;
-
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   try {
+    let token: string | null = null;
+    if (getAccessTokenFn) {
+      const tokenController = new AbortController();
+      const tokenTimeout = setTimeout(() => tokenController.abort(), 5000);
+      try {
+        token = await Promise.race([
+          getAccessTokenFn(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+      } finally {
+        clearTimeout(tokenTimeout);
+      }
+    }
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch(url, {
       ...options,
       headers,
@@ -155,27 +168,34 @@ export const apiClient = {
 
   // ─── Control Commands ───────────────────────────────────
 
-  setDeviceState: async (macDispositivo: string, encendido: boolean, override_automation: boolean = false): Promise<boolean> => {
+  setDeviceState: async (macDispositivo: string, encendido: boolean, override_automation: boolean = false): Promise<void> => {
     try {
+      const body: ComandoEstado = { encendido, override_automation };
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}/comando/estado`, {
         method: 'POST',
-        body: JSON.stringify({ encendido, override_automation }),
+        body: JSON.stringify(body),
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      throw e;
     }
   },
 
-  setDeviceLimits: async (macDispositivo: string, limits: DispositivoLimitesCommand): Promise<boolean> => {
+  setDeviceLimits: async (macDispositivo: string, limits: DispositivoLimitesCommand): Promise<void> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${macDispositivo}/comando/limites`, {
         method: 'POST',
         body: JSON.stringify(limits),
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      throw e;
     }
   },
 
@@ -261,25 +281,29 @@ export const apiClient = {
     }
   },
 
-  resolveAlert: async (alertaId: number): Promise<boolean> => {
+  resolveAlert: async (alertaId: number): Promise<void> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/alertas/${alertaId}`, {
         method: 'PATCH',
         body: JSON.stringify({ resuelto: true }),
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      throw e;
     }
   },
 
   // ─── Events ─────────────────────────────────────────────
 
-  getEvents: async (mac?: string, limite: number = 50): Promise<EventoResponse[]> => {
+  getEvents: async (mac?: string, limite: number = 50, offset: number = 0): Promise<EventoResponse[]> => {
     try {
       const params = new URLSearchParams();
       if (mac) params.append('mac', mac);
       params.append('limite', String(limite));
+      params.append('offset', String(offset));
       const res = await authenticatedFetch(`${API_BASE_URL}/api/eventos?${params.toString()}`);
       if (!res.ok) return [];
       return res.json();
@@ -319,11 +343,11 @@ export const apiClient = {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/users/settings`);
       if (!res.ok) {
-        return { ai_control_habilitado: false, auto_apagado_low_priority: false };
+        return { ai_control_habilitado: false, auto_apagado_low_priority: false, notificaciones_criticas: true, notificaciones_advertencias: true };
       }
       return res.json();
     } catch {
-      return { ai_control_habilitado: false, auto_apagado_low_priority: false };
+      return { ai_control_habilitado: false, auto_apagado_low_priority: false, notificaciones_criticas: true, notificaciones_advertencias: true };
     }
   },
 
@@ -348,10 +372,13 @@ export const apiClient = {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/dispositivos/${mac}/ai-control/override`, {
         method: 'POST',
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
       return res.json();
-    } catch {
-      return null;
+    } catch (e) {
+      throw e;
     }
   },
 
@@ -366,37 +393,46 @@ export const apiClient = {
     }
   },
 
-  markNotificationRead: async (id: number): Promise<boolean> => {
+  markNotificationRead: async (id: number): Promise<void> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ leido: true }),
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      throw e;
     }
   },
 
-  deleteNotification: async (id: number): Promise<boolean> => {
+  deleteNotification: async (id: number): Promise<void> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications/${id}`, {
         method: 'DELETE',
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      throw e;
     }
   },
 
-  clearAllNotifications: async (): Promise<boolean> => {
+  clearAllNotifications: async (): Promise<void> => {
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/api/notifications`, {
         method: 'DELETE',
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (!res.ok) {
+        const err = await parseApiError(res);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      throw e;
     }
   },
 };

@@ -17,7 +17,7 @@ export const HomeScreen = () => {
   const colors = getColors(isDark);
   const styles = getStyles(colors);
   
-  const unreadCount = useNotificationStore((state) => state.getUnreadCount());
+  const unreadCount = useNotificationStore((state) => state.notifications.filter(n => !n.read).length);
 
   const [onlineNodes, setOnlineNodes] = useState(0);
   const [firstDeviceMac, setFirstDeviceMac] = useState<string | null>(null);

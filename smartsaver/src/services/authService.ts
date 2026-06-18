@@ -59,6 +59,9 @@ function base64Decode(str: string): string {
   return result;
 }
 
+let refreshPromise: Promise<AuthTokens | null> | null = null;
+
+
 export async function loginWithAuth0(): Promise<AuthTokens | null> {
   const request = new AuthRequest({
     clientId: AUTH0_CLIENT_ID,
@@ -114,32 +117,42 @@ export async function loginWithAuth0(): Promise<AuthTokens | null> {
 }
 
 export async function refreshAccessToken(): Promise<AuthTokens | null> {
-  const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
-  if (!refreshToken) return null;
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+    if (!refreshToken) return null;
+
+    try {
+      const tokenResult = await refreshAsync(
+        {
+          clientId: AUTH0_CLIENT_ID,
+          refreshToken,
+        },
+        discovery,
+      );
+
+      const tokens: AuthTokens = {
+        accessToken: tokenResult.accessToken,
+        refreshToken: tokenResult.refreshToken ?? null,
+        idToken: tokenResult.idToken ?? '',
+        expiresIn: tokenResult.expiresIn ?? 900,
+        tokenExpiry: Date.now() + (tokenResult.expiresIn ?? 900) * 1000,
+      };
+
+      await saveTokens(tokens);
+      return tokens;
+    } catch (error) {
+      console.error('[Auth] Token refresh failed:', error);
+      await clearTokens();
+      return null;
+    }
+  })();
 
   try {
-    const tokenResult = await refreshAsync(
-      {
-        clientId: AUTH0_CLIENT_ID,
-        refreshToken,
-      },
-      discovery,
-    );
-
-    const tokens: AuthTokens = {
-      accessToken: tokenResult.accessToken,
-      refreshToken: tokenResult.refreshToken ?? null,
-      idToken: tokenResult.idToken ?? '',
-      expiresIn: tokenResult.expiresIn ?? 900,
-      tokenExpiry: Date.now() + (tokenResult.expiresIn ?? 900) * 1000,
-    };
-
-    await saveTokens(tokens);
-    return tokens;
-  } catch (error) {
-    console.error('[Auth] Token refresh failed:', error);
-    await clearTokens();
-    return null;
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
   }
 }
 
@@ -204,17 +217,24 @@ export async function revokeRefreshToken(): Promise<void> {
   const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
   if (!refreshToken) return;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
   try {
-    await fetch(discovery.revocationEndpoint!, {
+    const res = await fetch(discovery.revocationEndpoint!, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
         client_id: AUTH0_CLIENT_ID,
         token: refreshToken,
-      }),
+      }).toString(),
+      signal: controller.signal,
     });
+    if (!res.ok) console.warn('[Auth] revoke failed:', res.status);
   } catch {
     // Revocation best-effort — continue with local cleanup
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -229,7 +249,7 @@ async function saveTokens(tokens: AuthTokens): Promise<void> {
   await SecureStore.setItemAsync(SECURE_STORE_KEYS.TOKEN_EXPIRY, tokens.tokenExpiry.toString());
 }
 
-async function clearTokens(): Promise<void> {
+export async function clearTokens(): Promise<void> {
   await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
   await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
   await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ID_TOKEN);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -7,8 +7,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUserStore } from '../../store/useUserStore';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useAuthStore } from '../../store/useAuthStore';
-
-const { width } = Dimensions.get('window');
 
 export const OnboardingScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);

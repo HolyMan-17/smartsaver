@@ -5,16 +5,14 @@ import { wsService } from '../services/WebSocketService';
 interface TelemetryState {
   latestReadings: Record<string, TelemetryReading>;
   deviceOnlineStatus: Record<string, boolean>;
-  activeBmsAlerts: Record<string, { msg: string; ai_status: number } | null>;
+  relayStates: Record<string, boolean>;
+  autoKillStates: Record<string, string | null>;
   isConnected: boolean;
   isInitialized: boolean;
-  lastManualCommands: Record<string, number>;
-  prevPowerStates: Record<string, boolean>;
 
   startConnection: () => void;
   stopConnection: () => void;
-  resolveBmsAlert: (mac: string) => void;
-  recordManualToggle: (mac: string) => void;
+  setAutoKillFromHTTP: (mac: string, value: string | null) => void;
 }
 
 
@@ -25,11 +23,10 @@ let unsubscribeMessages: (() => void) | null = null;
 export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   latestReadings: {},
   deviceOnlineStatus: {},
-  activeBmsAlerts: {},
+  relayStates: {},
+  autoKillStates: {},
   isConnected: false,
   isInitialized: false,
-  lastManualCommands: {},
-  prevPowerStates: {},
 
   startConnection: () => {
     if (get().isInitialized) return;
@@ -51,7 +48,6 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
 
     set({ isInitialized: true });
 
-    // Connect real WebSocket service (disabled in production until backend WebSocket is active)
     // Connect real WebSocket service
     wsService.setTokenGetter(async () => {
       try {
@@ -77,31 +73,31 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
             [msg.mac]: {
               ...msg.data,
               ai_status: msg.data.ai_status ?? 0,
+              receivedAt: Date.now()
             } 
           },
         }));
       } else if (msg.type === 'conexion') {
-        set((state) => ({
-          deviceOnlineStatus: { ...state.deviceOnlineStatus, [msg.mac]: msg.data.is_online },
-        }));
+        set((state) => {
+          const updates: Partial<TelemetryState> = {};
+          if (msg.data.is_online !== undefined) {
+            updates.deviceOnlineStatus = { ...state.deviceOnlineStatus, [msg.mac]: msg.data.is_online };
+          }
+          if (msg.data.estado_reportado !== undefined) {
+            updates.relayStates = { ...state.relayStates, [msg.mac]: msg.data.estado_reportado };
+          }
+          return updates;
+        });
       } else if (msg.type === 'alerta') {
         set((state) => ({
-          activeBmsAlerts: {
-            ...state.activeBmsAlerts,
-            [msg.mac]: {
-              msg: msg.data.alerta,
-              ai_status: msg.data.ai_status,
-            },
-          },
-          // Real-time OFF state update on BMS alert
-          deviceOnlineStatus: { ...state.deviceOnlineStatus, [msg.mac]: false },
+          relayStates: { ...state.relayStates, [msg.mac]: msg.data.estado_reportado },
         }));
       } else if (msg.type === 'auto_kill_warning') {
-        // Handled by backend push
+        set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: msg.data.auto_kill_at } }));
       } else if (msg.type === 'auto_kill_executed') {
-        // Handled by backend push
+        set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: null } }));
       } else if (msg.type === 'auto_kill_cancelled') {
-        // Handled by backend push
+        set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: null } }));
       }
     });
 
@@ -122,24 +118,19 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
     set({
       isInitialized: false,
       isConnected: false,
+      latestReadings: {},
+      deviceOnlineStatus: {},
+      relayStates: {},
+      autoKillStates: {},
     });
   },
 
-  resolveBmsAlert: (mac: string) => {
-    set((state) => ({
-      activeBmsAlerts: {
-        ...state.activeBmsAlerts,
-        [mac]: null,
-      },
-    }));
-  },
-
-  recordManualToggle: (mac: string) => {
-    set((state) => ({
-      lastManualCommands: {
-        ...state.lastManualCommands,
-        [mac]: Date.now(),
-      },
-    }));
+  setAutoKillFromHTTP: (mac: string, value: string | null) => {
+    set((state) => {
+      if (state.autoKillStates[mac] === undefined) {
+        return { autoKillStates: { ...state.autoKillStates, [mac]: value } };
+      }
+      return state;
+    });
   },
 }));

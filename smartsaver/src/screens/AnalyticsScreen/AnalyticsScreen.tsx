@@ -16,7 +16,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const { width } = Dimensions.get('window');
+// width is now retrieved dynamically in the component to support rotation
 
 interface AnimatedLoaderProps {
   visible: boolean;
@@ -131,6 +131,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   // ─── Device selection ──────────────────────────────────────
   const [allDevices, setAllDevices] = useState<DispositivoResponse[]>([]);
   const [selectedMac, setSelectedMac] = useState<string | null>(mac || null);
+  const [hasDevices, setHasDevices] = useState(true);
 
   // ─── Data ───────────────────────────────────────────────────
   const [aggregates, setAggregates] = useState<AgregadosResponse[]>([]);
@@ -141,7 +142,15 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [isLoading, setIsLoading] = useState(true);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const tabIndex = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenWidth(window.width);
+    });
+    return () => subscription?.remove();
+  }, []);
 
   // Whenever timeRange changes, animate tabIndex!
   useEffect(() => {
@@ -182,17 +191,26 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const fetchDevices = useCallback(async (): Promise<DispositivoResponse[]> => {
     try {
       const devices = await apiClient.getDevices();
-      if (devices && devices.length > 0) {
+      if (devices === null) {
+        // API down — fall back to registry
+      } else if (devices.length === 0) {
+        // Show empty state
+        setHasDevices(false);
+        setAllDevices([]);
+        return [];
+      } else {
         setAllDevices(devices);
+        setHasDevices(true);
         return devices;
       }
     } catch {
       // fall through to fallback
     }
     const fallback: DispositivoResponse[] = [
-      { id: 1, mac: '00:1B:44:11:3A:B7', nombre_personalizado: null, nivel_prioridad: 'media', limite_consumo_w: 0, limite_voltaje: null, limite_corriente: null, limite_potencia: null, estado_deseado: false, estado_reportado: false, is_online: false, nivel_acceso: 'ADMIN', last_seen_at: null, auto_kill_at: null, ai_override_until: null },
+      { id: 1, mac: '00:1B:44:11:3A:B7', nombre_personalizado: null, nivel_prioridad: 'P2', limite_consumo_w: 0, limite_voltaje: null, limite_corriente: null, limite_potencia: null, estado_deseado: false, estado_reportado: false, is_online: false, nivel_acceso: 'ADMIN', last_seen_at: null, auto_kill_at: null, ai_override_until: null },
     ];
     setAllDevices(fallback);
+    setHasDevices(true);
     return fallback;
   }, []);
 
@@ -222,30 +240,28 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
     setIsPieLoading(true);
     try {
       const slices: PieSlice[] = [];
-      await Promise.all(
-        allDevices.map(async (device, index) => {
-          try {
-            const history = await apiClient.getTelemetryHistory(device.mac, 1);
-            const latest = history?.[0];
-            const power = latest?.potencia ?? 0;
-            const label = device.nombre_personalizado || device.mac;
-            slices.push({
-              value: Math.max(power, 0.1),
-              color: PIE_COLORS[index % PIE_COLORS.length],
-              text: truncateLabel(label, 12),
-              legend: label,
-            });
-          } catch {
-            const label = device.nombre_personalizado || device.mac;
-            slices.push({
-              value: 0.1,
-              color: PIE_COLORS[index % PIE_COLORS.length],
-              text: truncateLabel(label, 12),
-              legend: label,
-            });
-          }
-        })
-      );
+      for (const device of allDevices) {
+        try {
+          const history = await apiClient.getTelemetryHistory(device.mac, 1);
+          const latest = history?.[0];
+          const power = latest?.potencia ?? 0;
+          const label = device.nombre_personalizado || device.mac;
+          slices.push({
+            value: Math.max(power, 0.1),
+            color: PIE_COLORS[slices.length % PIE_COLORS.length],
+            text: truncateLabel(label, 12),
+            legend: label,
+          });
+        } catch {
+          const label = device.nombre_personalizado || device.mac;
+          slices.push({
+            value: 0.1,
+            color: PIE_COLORS[slices.length % PIE_COLORS.length],
+            text: truncateLabel(label, 12),
+            legend: label,
+          });
+        }
+      }
       slices.sort((a, b) => b.value - a.value);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setPieSlices(slices);
@@ -391,15 +407,19 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
       `;
 
       const { uri } = await Print.printToFileAsync({ html });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Exportar Reporte PDF',
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        Alert.alert('Error', 'La función de compartir no está disponible en este dispositivo.');
+      try {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Exportar Reporte PDF',
+            UTI: 'com.adobe.pdf',
+          });
+        } else {
+          Alert.alert('Error', 'La función de compartir no está disponible en este dispositivo.');
+        }
+      } finally {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
       }
     } catch (e) {
       console.error(e);
@@ -433,15 +453,19 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
       const fileUri = FileSystem.documentDirectory + 'smartsaver_export.csv';
       await FileSystem.writeAsStringAsync(fileUri, csvString);
 
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/csv',
-          dialogTitle: 'Exportar Datos CSV',
-          UTI: 'public.comma-separated-values-text',
-        });
-      } else {
-        Alert.alert('Error', 'La función de compartir no está disponible en este dispositivo.');
+      try {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'text/csv',
+            dialogTitle: 'Exportar Datos CSV',
+            UTI: 'public.comma-separated-values-text',
+          });
+        } else {
+          Alert.alert('Error', 'La función de compartir no está disponible en este dispositivo.');
+        }
+      } finally {
+        await FileSystem.deleteAsync(fileUri, { idempotent: true });
       }
     } catch (e) {
       console.error(e);
@@ -582,6 +606,13 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
         </TouchableOpacity>
       </View>
 
+      {!hasDevices ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Feather name="bar-chart-2" size={48} color={colors.textSecondary} />
+          <Text style={{ marginTop: 16, fontSize: 18, fontWeight: '600', color: colors.text }}>No hay datos disponibles</Text>
+          <Text style={{ marginTop: 8, textAlign: 'center', color: colors.textSecondary }}>Aún no tienes dispositivos registrados. Añade un dispositivo para ver analíticas.</Text>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* DEVICE PICKER — tap to open modal (multi-device) */}
@@ -629,7 +660,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
         {/* ENERGY SUMMARY CARDS */}
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#EFF6FF' }]}>
+            <View style={[styles.summaryIconContainer, { backgroundColor: colors.infoBg }]}>
               <Feather name="battery-charging" size={18} color="#3B82F6" />
             </View>
             <Text style={styles.summaryTitle}>Energía Total</Text>
@@ -638,7 +669,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
           </View>
 
           <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#F0FDF4' }]}>
+            <View style={[styles.summaryIconContainer, { backgroundColor: colors.successBg }]}>
               <Feather name="zap" size={18} color="#10B981" />
             </View>
             <Text style={styles.summaryTitle}>Potencia Promedio</Text>
@@ -649,7 +680,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
 
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#FEF3C7' }]}>
+            <View style={[styles.summaryIconContainer, { backgroundColor: colors.warningBg }]}>
               <Feather name="activity" size={18} color="#F59E0B" />
             </View>
             <Text style={styles.summaryTitle}>Pico de Potencia</Text>
@@ -658,7 +689,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
           </View>
 
           <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconContainer, { backgroundColor: '#F5F3FF' }]}>
+            <View style={[styles.summaryIconContainer, { backgroundColor: colors.iconBg }]}>
               <Feather name="bar-chart-2" size={18} color="#8B5CF6" />
             </View>
             <Text style={styles.summaryTitle}>Puntos de Datos</Text>
@@ -682,7 +713,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
               <LineChart
                 key={`${selectedMac}_${timeRange}`}
                 data={lineValues}
-                width={width - 100}
+                width={screenWidth - 100}
                 height={180}
                 thickness={3}
                 color="#3B82F6"
@@ -693,7 +724,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                 endFillColor="#3B82F6"
                 endOpacity={0.05}
                 initialSpacing={10}
-                spacing={Math.max(Math.floor((width - 120) / Math.max(lineValues.length, 1)), 5)}
+                spacing={Math.max(Math.floor((screenWidth - 120) / Math.max(lineValues.length, 1)), 5)}
                 hideRules
                 yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
                 xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
@@ -778,7 +809,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                     ? formatBucketLabel(a.bucket, currentGranularity)
                     : '',
                 }))}
-                width={width - 100}
+                width={screenWidth - 100}
                 height={160}
                 thickness={3}
                 color="#F59E0B"
@@ -789,7 +820,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
                 endFillColor="#F59E0B"
                 endOpacity={0.05}
                 initialSpacing={10}
-                spacing={Math.max(Math.floor((width - 120) / Math.max(aggregates.length, 1)), 5)}
+                spacing={Math.max(Math.floor((screenWidth - 120) / Math.max(aggregates.length, 1)), 5)}
                 hideRules
                 yAxisTextStyle={{ color: colors.textSecondary, fontSize: 10 }}
                 xAxisLabelTextStyle={{ color: colors.textSecondary, fontSize: 9 }}
@@ -827,8 +858,10 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
             <Text style={{ color: '#10B981', fontWeight: 'bold', fontSize: 14 }}>Exportar CSV</Text>
           </TouchableOpacity>
         </View>
-
       </ScrollView>
+      )}
+
+      {renderDevicePickerModal()}
     </SafeAreaView>
   );
 };

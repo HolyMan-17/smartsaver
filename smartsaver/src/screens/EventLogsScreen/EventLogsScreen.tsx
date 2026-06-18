@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { getStyles } from './EventLogsScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useEventLogStore, EventLog, LogType } from '../../store/useEventLogStore';
+import { apiClient } from '../../services/apiClient';
 
 export const EventLogsScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
@@ -14,6 +15,40 @@ export const EventLogsScreen = () => {
 
   const logs = useEventLogStore((s) => s.logs);
   const clearLogs = useEventLogStore((s) => s.clearLogs);
+
+  const [allLogs, setAllLogs] = React.useState<EventLog[]>(logs);
+  const [hasMore, setHasMore] = React.useState(true);
+  const [offset, setOffset] = React.useState(0);
+  const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+
+  React.useEffect(() => {
+    setAllLogs(logs);
+    setOffset(0);
+    setHasMore(true);
+  }, [logs]);
+
+  const loadMore = async () => {
+    if (isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const older = await apiClient.getEvents(undefined, 200, offset + 200);
+      const olderMapped: EventLog[] = older.map((e: any) => ({
+        id: `api_${e.id}`,
+        type: e.razon_disparo?.includes('AI') || e.razon_disparo?.includes('ai') ? 'AI_ACTION' : 'SYSTEM',
+        title: e.accion || 'Evento',
+        message: e.razon_disparo || 'Sin detalles',
+        timestamp: e.timestamp,
+        device_id: String(e.id_artefacto),
+      }));
+      setAllLogs([...allLogs, ...olderMapped]);
+      setOffset(offset + 200);
+      setHasMore(older.length === 200);
+    } catch (e) {
+      console.warn('Failed to load more logs', e);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const handleClear = () => {
     Alert.alert(
@@ -66,7 +101,7 @@ export const EventLogsScreen = () => {
 
   const renderLogItem = ({ item, index }: { item: EventLog, index: number }) => {
     const styleData = getLogStyles(item.type);
-    const isLast = index === logs.length - 1;
+    const isLast = index === allLogs.length - 1;
 
     return (
       <View style={styles.logItemContainer}>
@@ -112,6 +147,23 @@ export const EventLogsScreen = () => {
     </View>
   );
 
+  const renderFooter = () => {
+    if (!hasMore) return null;
+    return (
+      <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+        <TouchableOpacity 
+          style={{ paddingVertical: 8, paddingHorizontal: 16, backgroundColor: colors.infoBg, borderRadius: 8 }}
+          onPress={loadMore}
+          disabled={isLoadingMore}
+        >
+          <Text style={{ color: '#3B82F6', fontWeight: '500' }}>
+            {isLoadingMore ? 'Cargando...' : 'Cargar más'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -121,10 +173,10 @@ export const EventLogsScreen = () => {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Historial de Eventos</Text>
           <Text style={styles.headerSubtitle}>
-            {logs.length > 0 ? `${logs.length} eventos registrados` : 'Historial del Sistema e Intervenciones de IA'}
+            {allLogs.length > 0 ? `${allLogs.length} eventos registrados` : 'Historial del Sistema e Intervenciones de IA'}
           </Text>
         </View>
-        {logs.length > 0 && (
+        {allLogs.length > 0 && (
           <TouchableOpacity onPress={handleClear} style={{ padding: 8 }}>
             <Feather name="trash-2" size={20} color="#EF4444" />
           </TouchableOpacity>
@@ -132,12 +184,13 @@ export const EventLogsScreen = () => {
       </View>
 
       <FlatList
-        data={logs}
+        data={allLogs}
         keyExtractor={(item) => item.id}
         renderItem={renderLogItem}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
       />
     </SafeAreaView>
   );

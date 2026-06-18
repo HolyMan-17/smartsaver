@@ -32,7 +32,7 @@ export const useUserStore = create<UserState>((set) => ({
       });
     } catch (e) {
       console.warn("Error loading user profile", e);
-      set({ isLoading: false });
+      set({ isLoading: false, hasCompletedOnboarding: true });
     }
   },
 

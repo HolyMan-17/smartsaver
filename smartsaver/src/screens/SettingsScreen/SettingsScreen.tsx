@@ -39,8 +39,10 @@ export const SettingsScreen = () => {
         const settings = await apiClient.getUserSettings();
         setEnableAI(settings.ai_control_habilitado);
         setAutoLoadShedding(settings.auto_apagado_low_priority);
-      } catch (err) {
-        console.error('Error fetching settings:', err);
+        setNotifyCritical(settings.notificaciones_criticas ?? true);
+        setNotifyWarnings(settings.notificaciones_advertencias ?? true);
+      } catch {
+        console.error('Error fetching settings');
       } finally {
         setIsLoadingSettings(false);
       }
@@ -66,7 +68,7 @@ export const SettingsScreen = () => {
       } else {
         throw new Error('Server returned failed status');
       }
-    } catch (err) {
+    } catch {
       setEnableAI(previousValue);
       Alert.alert('Error', 'No se pudieron guardar tus ajustes de IA. Comprueba tu conexión.');
     } finally {
@@ -92,9 +94,47 @@ export const SettingsScreen = () => {
       } else {
         throw new Error('Server returned failed status');
       }
-    } catch (err) {
+    } catch {
       setAutoLoadShedding(previousValue);
       Alert.alert('Error', 'No se pudieron guardar tus ajustes de corte. Comprueba tu conexión.');
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
+
+  const handleToggleNotifyCritical = async (newValue: boolean) => {
+    if (isUpdatingSettings) return;
+    setIsUpdatingSettings(true);
+    const previousValue = notifyCritical;
+    setNotifyCritical(newValue);
+
+    try {
+      const updated = await apiClient.updateUserSettings({ notificaciones_criticas: newValue });
+      if (!updated) {
+        throw new Error('Server returned failed status');
+      }
+    } catch {
+      setNotifyCritical(previousValue);
+      Alert.alert('Error', 'No se pudieron guardar tus ajustes de notificaciones. Comprueba tu conexión.');
+    } finally {
+      setIsUpdatingSettings(false);
+    }
+  };
+
+  const handleToggleNotifyWarnings = async (newValue: boolean) => {
+    if (isUpdatingSettings) return;
+    setIsUpdatingSettings(true);
+    const previousValue = notifyWarnings;
+    setNotifyWarnings(newValue);
+
+    try {
+      const updated = await apiClient.updateUserSettings({ notificaciones_advertencias: newValue });
+      if (!updated) {
+        throw new Error('Server returned failed status');
+      }
+    } catch {
+      setNotifyWarnings(previousValue);
+      Alert.alert('Error', 'No se pudieron guardar tus ajustes de notificaciones. Comprueba tu conexión.');
     } finally {
       setIsUpdatingSettings(false);
     }
@@ -278,9 +318,10 @@ export const SettingsScreen = () => {
             </View>
             <CustomSwitch
               value={notifyCritical}
-              onValueChange={setNotifyCritical}
+              onValueChange={handleToggleNotifyCritical}
               activeColor="#3B82F6"
               inactiveColor={colors.border}
+              disabled={isUpdatingSettings}
             />
           </View>
 
@@ -296,9 +337,10 @@ export const SettingsScreen = () => {
             </View>
             <CustomSwitch
               value={notifyWarnings}
-              onValueChange={setNotifyWarnings}
+              onValueChange={handleToggleNotifyWarnings}
               activeColor="#3B82F6"
               inactiveColor={colors.border}
+              disabled={isUpdatingSettings}
             />
           </View>
         </View>

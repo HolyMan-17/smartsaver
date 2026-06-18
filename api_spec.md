@@ -1,12 +1,36 @@
----
-SmartSaver IoT Backend — API & Architecture Specification
-Overview
-FastAPI backend for managing IoT devices (ESP32-based Smart Mini-UPS). Devices communicate via MQTT; the backend persists telemetry to MariaDB and exposes a REST API for the frontend app. All endpoints, models, and columns use Spanish naming conventions.
----
-Base URL
-http://<host>:8000
-(No API prefix beyond /api on data endpoints; /health is at root.)
----
+# ⚠️ HISTORICAL — v1 API Specification (Deprecated)
+
+> **This document describes the ORIGINAL v1 API.** It has been superseded.
+>
+> **Current (v5+) sources of truth:**
+> - **Frontend endpoints:** `smartsaver/CONTEXT.md` and `AGENTS.md` — complete endpoint table with screens
+> - **Frontend types:** `smartsaver/src/types/api.ts` — live TypeScript schemas
+> - **Frontend API client:** `smartsaver/src/services/apiClient.ts` — all endpoint implementations
+> - **Backend overhaul spec:** `remember-me/BACKEND-SPEC.md` — Auth0 OAuth2.1 + RESTful routing + new tables
+> - **Database schema:** `database_schema.md`
+>
+> ### Key v1→v5 Changes
+> | v1 (this doc) | v5 (current) |
+> |---|---|
+> | MAC in request body | MAC in URL path |
+> | `POST /api/comando/estado` | `POST /api/dispositivos/{mac}/comando/estado` |
+> | `POST /api/comando/limites` | `POST /api/dispositivos/{mac}/comando/limites` |
+> | `GET /api/telemetria/{mac}` | `GET /api/dispositivos/{mac}/telemetria` |
+> | `GET /api/dispositivos/{mac}/estado` | `GET /api/dispositivos/{mac}` (merged into device detail) |
+> | No auth (API keys) | Auth0 OAuth2.1 JWT Bearer tokens |
+> | `is_encendido` field | `estado_reportado` / `estado_deseado` (V5.0 BREAKING) |
+> | Flat error `{"detail": "..."}` | Structured `{"error": "not_found", "message": "...", "mac": "..."}` |
+> | No websocket auth | WS auth via `?token=<jwt>` query param |
+>
+> ### New v5+ endpoints (not in v1)
+> `GET /api/dispositivos`, `GET/PATCH /api/dispositivos/{mac}`, `DELETE /api/dispositivos/{mac}`, `GET /api/dispositivos/{mac}/agregados`, `GET/PUT /api/dispositivos/{mac}/horario`, `POST /api/dispositivos/{mac}/ai-control/override`, `GET /api/alertas`, `PATCH /api/alertas/{id}`, `GET /api/eventos`, `GET /api/recomendaciones`, `GET/PATCH /api/users/settings`, `GET/PATCH/DELETE /api/notifications`
+>
+> ---
+> ### Original v1 spec continues below for historical reference only.
+>
+> Base URL: `http://<host>:8000`
+> (No API prefix beyond `/api` on data endpoints; `/health` is at root.)
+> ---
 Endpoints
 GET /health
 Health check. Returns an empty object.

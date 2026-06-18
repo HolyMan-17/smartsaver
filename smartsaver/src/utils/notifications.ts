@@ -1,6 +1,5 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { useNotificationStore } from '../store/useNotificationStore';
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
@@ -55,6 +54,9 @@ export async function requestNotificationPermissions() {
     console.log('Failed to get push token for push notification!');
     return false;
   }
+
+  await Notifications.registerTaskAsync('BACKGROUND_NOTIFICATION_TASK').catch(() => {});
+
   return true;
 }
 
