@@ -10,6 +10,20 @@ import { useUserStore } from '../../store/useUserStore';
 import { apiClient } from '../../services/apiClient';
 import { DEVICE_REGISTRY } from '../DevicesScreen/DevicesScreen';
 import { useNotificationStore } from '../../store/useNotificationStore';
+import { useUpsStore } from '../../store/useUpsStore';
+import { UpsSistema, SystemPower } from '../../types/api';
+
+const computeAutonomyEstimate = (
+  ups: UpsSistema | null,
+  power: SystemPower | null,
+): number | null => {
+  if (!ups || !power?.potencia_total_w || power.potencia_total_w <= 0) return null;
+  const totalWh = ups.baterias_cantidad * ups.bateria_voltaje_v * ups.bateria_capacidad_ah;
+  if (totalWh <= 0) return null;
+  const charge = power.carga_bateria_porcentaje ?? 100;
+  const usableWh = totalWh * (charge / 100);
+  return Math.round((usableWh / power.potencia_total_w) * 60);
+};
 
 export const HomeScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
@@ -18,9 +32,13 @@ export const HomeScreen = () => {
   const styles = getStyles(colors);
   
   const unreadCount = useNotificationStore((state) => state.notifications.filter(n => !n.read).length);
+  const { upsData, systemPower } = useUpsStore();
 
   const [onlineNodes, setOnlineNodes] = useState(0);
   const [firstDeviceMac, setFirstDeviceMac] = useState<string | null>(null);
+
+  const isBatteryMode = upsData?.modo_actual === 1;
+  const autonomyMin = systemPower?.autonomia_estimada_min ?? computeAutonomyEstimate(upsData, systemPower);
 
   const fetchOnlineNodes = async () => {
     try {
@@ -99,6 +117,40 @@ export const HomeScreen = () => {
           <Text style={styles.statusValue}>{onlineNodes > 0 ? 'Óptimo' : 'Crítico'}</Text>
           <Text style={styles.statusSubtext}>{onlineNodes} Nodo{onlineNodes !== 1 ? 's' : ''} en Línea • IA {onlineNodes > 0 ? 'Activa' : 'Inactiva'}</Text>
         </LinearGradient>
+
+        {/* UPS STATUS CARD */}
+        {upsData && (
+          <LinearGradient
+            colors={isBatteryMode ? ['#F59E0B', '#D97706'] : ['#10B981', '#059669']}
+            style={styles.upsCard}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.statusHeader}>
+              <Feather name={isBatteryMode ? "battery" : "zap"} size={20} color="#FFFFFF" />
+              <Text style={styles.statusTitle}>Estado del UPS</Text>
+            </View>
+            <Text style={styles.statusValue}>{isBatteryMode ? 'Modo Batería' : 'Modo Red'}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 }}>
+              <View>
+                <Text style={styles.upsSubLabel}>Potencia</Text>
+                <Text style={styles.upsSubValue}>{systemPower?.potencia_total_w ?? 0} W</Text>
+              </View>
+              <View>
+                <Text style={styles.upsSubLabel}>Batería</Text>
+                <Text style={styles.upsSubValue}>{systemPower?.carga_bateria_porcentaje != null ? `${systemPower.carga_bateria_porcentaje}%` : '—'}</Text>
+              </View>
+              <View>
+                <Text style={styles.upsSubLabel}>Autonomía</Text>
+                <Text style={styles.upsSubValue}>
+                  {isBatteryMode 
+                    ? (autonomyMin != null ? `${autonomyMin} min` : '—') 
+                    : 'Ilimitada'}
+                </Text>
+              </View>
+            </View>
+          </LinearGradient>
+        )}
 
         {/* QUICK LINKS SECTION */}
         <Text style={styles.sectionHeader}>Acciones Rápidas</Text>

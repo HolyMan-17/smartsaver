@@ -21,7 +21,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.manu_0ak.smartsaver"
+      "package": "com.manu_0ak.smartsaver",
+      "permissions": [
+        "INTERNET",
+        "VIBRATE"
+      ]
     },
     "web": {
       "output": "static",

@@ -59,13 +59,34 @@ export interface WSAutoKillCancelledMessage {
   };
 }
 
+export interface WSGatewayAlertaMessage {
+  type: "gateway_alerta";
+  mac?: string;
+  data: {
+    alerta: string;
+  };
+}
+
+export interface WSGatewayTelemetriaMessage {
+  type: "gateway_telemetria";
+  mac: string;
+  data: {
+    potencia_total_w: number;
+    cantidad_dispositivos_activos?: number;
+    autonomia_estimada_min?: number;
+    carga_bateria_porcentaje?: number;
+  };
+}
+
 export type WSMessage = 
   | WSTelemetriaMessage 
   | WSConexionMessage 
   | WSAlertaMessage
   | WSAutoKillWarningMessage
   | WSAutoKillExecutedMessage
-  | WSAutoKillCancelledMessage;
+  | WSAutoKillCancelledMessage
+  | WSGatewayAlertaMessage
+  | WSGatewayTelemetriaMessage;
 
 // ponytail: MLPrediction, HardwareState, and IoTGatewayPayload were unused boilerplate types and have been deleted.
 

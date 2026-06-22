@@ -1,5 +1,24 @@
 // ─── Response Schemas ────────────────────────────────────
 
+export interface UpsSistema {
+  id: number;
+  nombre: string;
+  inversor_w: number;
+  baterias_cantidad: number;
+  bateria_voltaje_v: number;
+  bateria_capacidad_ah: number;
+  configuracion_baterias: 'series' | 'parallel';
+  modo_actual: number; // 0 = Line Mode (Grid), 1 = Battery Mode (UPS)
+  actualizado_en: string; // ISO 8601
+}
+
+export interface SystemPower {
+  potencia_total_w: number;
+  cantidad_dispositivos_activos: number;
+  autonomia_estimada_min?: number; // CÁLCULO PROVISTO POR BACKEND
+  carga_bateria_porcentaje?: number; // CÁLCULO PROVISTO POR BACKEND
+}
+
 export interface TelemetriaResponse {
   id: number;
   mac_dispositivo: string;

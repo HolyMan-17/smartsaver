@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { TelemetryReading, WSMessage } from '../types/telemetry';
 import { wsService } from '../services/WebSocketService';
+import { useUpsStore } from './useUpsStore';
 
 interface TelemetryState {
   latestReadings: Record<string, TelemetryReading>;
@@ -98,6 +99,16 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
         set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: null } }));
       } else if (msg.type === 'auto_kill_cancelled') {
         set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: null } }));
+      } else if (msg.type === 'gateway_alerta') {
+        if (msg.data.alerta === 'UPS_BATTERY_MODE') {
+          useUpsStore.getState().setUpsMode(1);
+        } else if (msg.data.alerta === 'UPS_LINE_MODE') {
+          useUpsStore.getState().setUpsMode(0);
+        } else {
+          console.debug('Unhandled gateway_alerta:', msg.data.alerta);
+        }
+      } else if (msg.type === 'gateway_telemetria') {
+        useUpsStore.getState().updateSystemPower(msg.data);
       }
     });
 

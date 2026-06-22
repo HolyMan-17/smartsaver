@@ -16,6 +16,8 @@ import {
   HorarioUpdate,
   HorarioResponse,
   NotificacionUsuarioResponse,
+  UpsSistema,
+  SystemPower,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -138,6 +140,30 @@ export const apiClient = {
       return res.json();
     } catch (e) {
       throw e;
+    }
+  },
+
+  // ─── System / UPS ───────────────────────────────────────
+
+  getUpsState: async (): Promise<UpsSistema | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/system/ups-state`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch (e) {
+      console.warn('getUpsState failed:', e);
+      return null;
+    }
+  },
+
+  getConsumoActual: async (): Promise<SystemPower | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/system/consumo-actual`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch (e) {
+      console.warn('getConsumoActual failed:', e);
+      return null;
     }
   },
 

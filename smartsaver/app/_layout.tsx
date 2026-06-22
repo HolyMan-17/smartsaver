@@ -16,6 +16,7 @@ import { useAuthStore } from '../src/store/useAuthStore';
 import { apiClient, setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
 import { useTelemetryStore } from '../src/store/useTelemetryStore';
+import { useUpsStore } from '../src/store/useUpsStore';
 import '../src/utils/backgroundNotificationTask';
 
 // Must be at app root level so it intercepts the Auth0 callback
@@ -130,8 +131,11 @@ export default function RootLayout() {
         useNotificationStore.getState().syncBackendNotifications().catch(e => console.warn('notif sync failed', e));
       }
 
+      useUpsStore.getState().fetchUpsState().catch((e: any) => console.warn('Failed to fetch UPS state:', e));
+
     } else {
       stopConnection();
+      useUpsStore.getState().clearUpsState();
     }
   }, [isAuthenticated, startConnection, stopConnection]);
 

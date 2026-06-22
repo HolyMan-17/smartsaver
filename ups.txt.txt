@@ -1,0 +1,60 @@
+ ### 1. Add the TypeScript Interfaces
+
+    export interface UpsSistema {
+      id: number;
+      nombre: string;
+      inversor_w: number;
+      baterias_cantidad: number;
+      bateria_voltaje_v: number;
+      bateria_capacidad_ah: number; // Will default to 9
+      modo_actual: number; // 0 = Line Mode (Grid), 1 = Battery Mode (UPS)
+      actualizado_en: string; // ISO 8601 string
+      configuracion_baterias: 'series' | 'parallel' | string;
+    }
+    
+    export interface SystemPower {
+      potencia_total_w: number;
+      cantidad_dispositivos_activos: number;
+    
+  ### 2. Fetch the Initial State
+    }
+  When your app initializes (or when the dashboard mounts), fetch both the UPS profile and the current live
+  consumption:
+
+  • Endpoints:
+      •  GET /api/system/ups-state 
+      •  GET /api/system/consumo-actual 
+  • Headers: Ensure you pass  Authorization: Bearer <token> 
+  dictate the entire household's UI (e.g., the master power dial and battery autonomy estimates).
+
+  ### 3. Handle Real-Time Updates (WebSocket)
+  • Action: Store both results in your global state (like Zustand, Redux, or React Context) since they
+  The backend now uses a dedicated gateway namespace to broadcast system-wide metrics over the 
+  /ws/telemetry  socket. You need to listen to these specific gateway events:
+  Inside your WebSocket message handler:
+    // Assuming `event` is the parsed JSON from the WebSocket
+    if (event.type === 'gateway_alerta') {
+      if (event.data.alerta === 'UPS_BATTERY_MODE') {
+        // Update global state: set UPS modo_actual to 1 (Battery)
+        setUpsMode(1); 
+      } else if (event.data.alerta === 'UPS_LINE_MODE') {
+        // Update global state: set UPS modo_actual to 0 (Line/Grid)
+        setUpsMode(0);
+      }
+    } 
+    else if (event.type === 'gateway_telemetria') {
+      // Update global state with live physical consumption from the inverter
+      setTotalConsumption(event.data.potencia_total_w);
+    }
+
+  ### Summary of the Flow
+
+  1. User logs in.
+  2. Frontend calls  GET /api/system/ups-state  and  GET /api/system/consumo-actual .
+  3. The dashboard UI renders:
+      • Green dial (Grid) or Amber/Red dial (Battery) based on  modo_actual .
+      • The master power consumption using  potencia_total_w .
+      • Autonomy computations based on the 1200W inverter and 2x12V 9Ah battery specs.
+  4. If the power cuts, the backend pushes a  gateway_alerta  ->  UPS_BATTERY_MODE  WebSocket event.
+  5. The frontend catches it, updates the store, and the UI immediately reflects that the house is now
+  drawing power from the batteries.
