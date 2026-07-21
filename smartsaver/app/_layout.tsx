@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { LogBox, ActivityIndicator, View } from 'react-native';
+import { LogBox, ActivityIndicator, View, AppState, type AppStateStatus } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import * as Notifications from 'expo-notifications';
@@ -17,6 +18,7 @@ import { apiClient, setAccessTokenGetter } from '../src/services/apiClient';
 import { LoginScreen } from '../src/screens/LoginScreen/LoginScreen';
 import { useTelemetryStore } from '../src/store/useTelemetryStore';
 import { useUpsStore } from '../src/store/useUpsStore';
+import { useRefreshTickStore } from '../src/store/useRefreshTickStore';
 import '../src/utils/backgroundNotificationTask';
 
 // Must be at app root level so it intercepts the Auth0 callback
@@ -139,39 +141,62 @@ export default function RootLayout() {
     }
   }, [isAuthenticated, startConnection, stopConnection]);
 
+  useEffect(() => {
+    let lastActiveAt: number = Date.now();
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active' && isAuthenticated) {
+        const wasBackgroundLong: boolean = Date.now() - lastActiveAt > 30000;
+        if (wasBackgroundLong) {
+          useTelemetryStore.getState().forceReconnect();
+        }
+        useRefreshTickStore.getState().tick();
+      } else if (nextState === 'background' || nextState === 'inactive') {
+        lastActiveAt = Date.now();
+      }
+    });
+    return () => subscription?.remove();
+  }, [isAuthenticated]);
+
   const themeHydrated = useThemeStore((state) => state._hasHydrated);
 
   if (isLoading || !themeHydrated) {
     return (
-      <SafeAreaProvider>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-          <ActivityIndicator size="large" color="#3B82F6" />
-        </View>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <SafeAreaProvider>
-        <LoginScreen />
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <LoginScreen />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ 
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.background }
-        }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="onboarding" />
-          <Stack.Screen name="notifications" />
-        </Stack>
-        <StatusBar style={isDark ? 'light' : 'dark'} />
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+          <Stack screenOptions={{ 
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.background }
+          }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="onboarding" />
+            <Stack.Screen name="notifications" />
+            <Stack.Screen name="ups" />
+          </Stack>
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

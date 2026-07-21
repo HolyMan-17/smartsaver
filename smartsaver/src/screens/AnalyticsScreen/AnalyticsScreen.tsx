@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Alert, Modal, Pressable, LayoutAnimation, UIManager, Platform, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import { getStyles } from './AnalyticsScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
+import { useUserStore } from '../../store/useUserStore';
 import { apiClient } from '../../services/apiClient';
 import { TelemetriaResponse, DispositivoResponse, AgregadosResponse } from '../../types/api';
 
@@ -123,6 +124,25 @@ const TIME_RANGE_LABELS: Record<TimeRange, string> = {
   '30d': 'Últimos 30 días',
 };
 
+function mergeSystemAggregates(allData: AgregadosResponse[]): AgregadosResponse[] {
+  const map = new Map<string, { avgSum: number; maxVal: number; energySum: number }>();
+  for (const item of allData) {
+    const entry = map.get(item.bucket) || { avgSum: 0, maxVal: 0, energySum: 0 };
+    entry.avgSum += item.potencia_promedio_w ?? 0;
+    entry.maxVal = Math.max(entry.maxVal, item.potencia_maxima_w ?? 0);
+    entry.energySum += item.energia_wh ?? 0;
+    map.set(item.bucket, entry);
+  }
+  return Array.from(map.entries())
+    .map(([bucket, vals]) => ({
+      bucket,
+      potencia_promedio_w: vals.avgSum,
+      potencia_maxima_w: vals.maxVal,
+      energia_wh: vals.energySum,
+    }))
+    .sort((a, b) => a.bucket.localeCompare(b.bucket));
+}
+
 export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const isDark = useThemeStore((state) => state.isDark);
   const colors = getColors(isDark);
@@ -142,6 +162,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [isLoading, setIsLoading] = useState(true);
   const [containerWidth, setContainerWidth] = useState(0);
+  const userName = useUserStore((s) => s.userName);
   const [screenWidth, setScreenWidth] = useState(Dimensions.get('window').width);
   const tabIndex = React.useRef(new Animated.Value(0)).current;
 
@@ -165,6 +186,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const [isPieLoading, setIsPieLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const allDevicesRef = useRef<DispositivoResponse[]>([]);
 
   // ─── Helpers ────────────────────────────────────────────────
   const totalEnergyKwh = aggregates.reduce((sum, a) => sum + (a.energia_wh ?? 0), 0) / 1000;
@@ -174,7 +196,9 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   const peakPower = aggregates.length > 0
     ? Math.max(...aggregates.map((a) => a.potencia_maxima_w ?? 0))
     : 0;
-  const selectedDeviceName = allDevices.find((d) => d.mac === selectedMac)?.nombre_personalizado || selectedMac || '';
+  const selectedDeviceName = selectedMac === '__system__'
+    ? `Sistema Completo (${allDevices.length} disp.)`
+    : allDevices.find((d) => d.mac === selectedMac)?.nombre_personalizado || selectedMac || '';
 
   const handleDeviceSelect = (mac: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -200,6 +224,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
         return [];
       } else {
         setAllDevices(devices);
+        allDevicesRef.current = devices;
         setHasDevices(true);
         return devices;
       }
@@ -210,6 +235,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
       { id: 1, mac: '00:1B:44:11:3A:B7', nombre_personalizado: null, nivel_prioridad: 'P2', limite_consumo_w: 0, limite_voltaje: null, limite_corriente: null, limite_potencia: null, estado_deseado: false, estado_reportado: false, is_online: false, nivel_acceso: 'ADMIN', last_seen_at: null, auto_kill_at: null, ai_override_until: null },
     ];
     setAllDevices(fallback);
+    allDevicesRef.current = fallback;
     setHasDevices(true);
     return fallback;
   }, []);
@@ -220,13 +246,25 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
     setIsLoading(true);
     try {
       const { granularity, desde } = getRangeParams(timeRange);
-      const [aggData, histData] = await Promise.all([
-        apiClient.getTelemetryAggregates(selectedMac, granularity, desde),
-        apiClient.getTelemetryHistory(selectedMac, 50),
-      ]);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setAggregates(aggData);
-      setRawHistory(histData);
+      if (selectedMac === '__system__') {
+        const devices = allDevicesRef.current;
+        if (devices.length === 0) { setIsLoading(false); return; }
+        const allResults = await Promise.all(
+          devices.map(d => apiClient.getTelemetryAggregates(d.mac, granularity, desde))
+        );
+        const merged = mergeSystemAggregates(allResults.flat());
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setAggregates(merged);
+        setRawHistory([]);
+      } else {
+        const [aggData, histData] = await Promise.all([
+          apiClient.getTelemetryAggregates(selectedMac, granularity, desde),
+          apiClient.getTelemetryHistory(selectedMac, 50),
+        ]);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setAggregates(aggData);
+        setRawHistory(histData);
+      }
     } catch (e) {
       console.warn('[Analytics] fetchDeviceAnalytics failed:', e);
     } finally {
@@ -276,7 +314,7 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
   useEffect(() => {
     fetchDevices().then((devices) => {
       if (!selectedMac && devices && devices.length > 0) {
-        setSelectedMac(devices[0].mac);
+        setSelectedMac('__system__');
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -315,92 +353,288 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
     }
     setIsExporting(true);
     try {
-      const now = new Date().toLocaleString('es-ES');
-      const deviceName = allDevices.find((d) => d.mac === selectedMac)?.nombre_personalizado || selectedMac;
+      const now = new Date().toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const deviceName = selectedMac === '__system__'
+        ? 'Sistema Completo'
+        : allDevices.find((d) => d.mac === selectedMac)?.nombre_personalizado || selectedMac || '';
 
-      let tableRows = '';
-      if (aggregates.length > 0) {
-        aggregates.forEach((item) => {
-          tableRows += `
-            <tr>
-              <td>${item.bucket}</td>
-              <td>${(item.potencia_promedio_w ?? 0).toFixed(2)} W</td>
-              <td>${(item.potencia_maxima_w ?? 0).toFixed(2)} W</td>
-              <td>${(item.energia_wh ?? 0).toFixed(2)} Wh</td>
-            </tr>
-          `;
-        });
-      } else {
+      let rawTableRows = '';
+      if (rawHistory.length > 0 && aggregates.length === 0) {
         rawHistory.forEach((item) => {
           const time = new Date(item.timestamp).toLocaleTimeString('es-ES');
-          const color = item.potencia > 30 ? '#EF4444' : item.potencia > 15 ? '#F59E0B' : '#10B981';
-          tableRows += `
+          const powerClass = item.potencia > 30 ? 'critical' : item.potencia > 15 ? 'warning' : 'safe';
+          rawTableRows += `
             <tr>
               <td>${time}</td>
               <td>${item.voltaje.toFixed(2)} V</td>
               <td>${item.corriente.toFixed(2)} A</td>
-              <td style="color: ${color}; font-weight: bold;">${item.potencia.toFixed(2)} W</td>
+              <td><span class="${powerClass}">${item.potencia.toFixed(2)} W</span></td>
             </tr>
           `;
         });
       }
 
+      let aggTableRows = '';
+      if (aggregates.length > 0) {
+        aggregates.forEach((item) => {
+          const timeLabel = currentGranularity === 'hour'
+            ? item.bucket.slice(11, 16)
+            : item.bucket.slice(5, 10).split('-').reverse().join('/');
+          aggTableRows += `
+            <tr>
+              <td>${timeLabel}</td>
+              <td>${(item.potencia_promedio_w ?? 0).toFixed(2)}</td>
+              <td>${(item.potencia_maxima_w ?? 0).toFixed(2)}</td>
+              <td>${(item.energia_wh ?? 0).toFixed(2)}</td>
+            </tr>
+          `;
+        });
+      }
+
+      const rangeLabel = TIME_RANGE_LABELS[timeRange];
+      const datasetCount = aggregates.length > 0 ? aggregates.length : rawHistory.length;
+
       const html = `
         <html>
           <head>
+            <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             <style>
-              body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 20px; color: #333; }
-              h1 { color: #2563EB; border-bottom: 2px solid #2563EB; padding-bottom: 10px; }
-              h3 { color: #475569; }
-              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-              th { background-color: #F1F5F9; color: #475569; padding: 12px; text-align: left; border-bottom: 2px solid #CBD5E1; }
-              td { padding: 10px; border-bottom: 1px solid #E2E8F0; }
-              tr:nth-child(even) { background-color: #F8FAFC; }
-              .summary { display: flex; justify-content: space-between; margin: 20px 0; }
-              .summary-box { background: #EFF6FF; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 5px; }
-              .summary-box h4 { margin: 0; color: #3B82F6; font-size: 14px; }
-              .summary-box p { margin: 5px 0 0; font-size: 18px; font-weight: bold; color: #1E293B; }
-              .footer { margin-top: 30px; font-size: 12px; color: #94A3B8; text-align: center; }
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body {
+                font-family: -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                color: #1E293B;
+                background: #fff;
+                padding: 0;
+                font-size: 13px;
+                line-height: 1.5;
+              }
+
+              .header {
+                background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 60%, #60A5FA 100%);
+                color: #fff;
+                padding: 28px 32px 22px;
+              }
+              .header h1 {
+                font-size: 24px;
+                font-weight: 800;
+                letter-spacing: -0.5px;
+                margin: 0;
+              }
+              .header p {
+                font-size: 13px;
+                opacity: 0.85;
+                margin-top: 4px;
+              }
+
+              .content {
+                padding: 24px 32px;
+              }
+
+              .meta-grid {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-bottom: 20px;
+                padding: 14px 18px;
+                background: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+              }
+              .meta-item {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                color: #475569;
+                margin-right: 20px;
+              }
+              .meta-item strong {
+                color: #1E293B;
+                font-weight: 700;
+              }
+              .meta-separator {
+                width: 1px;
+                height: 16px;
+                background: #CBD5E1;
+                margin: 0 8px;
+              }
+
+              .kpi-row {
+                display: flex;
+                gap: 14px;
+                margin-bottom: 24px;
+              }
+              .kpi-card {
+                flex: 1;
+                border-radius: 12px;
+                padding: 16px 18px;
+                text-align: center;
+                border: 1px solid;
+              }
+              .kpi-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                margin: 0 auto 6px;
+              }
+              .kpi-energy .kpi-dot { background: #3B82F6; }
+              .kpi-avg .kpi-dot { background: #10B981; }
+              .kpi-peak .kpi-dot { background: #F97316; }
+              .kpi-count .kpi-dot { background: #8B5CF6; }
+              .kpi-value {
+                font-size: 22px;
+                font-weight: 800;
+                margin-bottom: 2px;
+              }
+              .kpi-label {
+                font-size: 10px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+              }
+              .kpi-energy { background: #EFF6FF; border-color: #BFDBFE; }
+              .kpi-energy .kpi-value { color: #1D4ED8; }
+              .kpi-energy .kpi-label { color: #3B82F6; }
+              .kpi-avg { background: #ECFDF5; border-color: #A7F3D0; }
+              .kpi-avg .kpi-value { color: #059669; }
+              .kpi-avg .kpi-label { color: #10B981; }
+              .kpi-peak { background: #FFF7ED; border-color: #FED7AA; }
+              .kpi-peak .kpi-value { color: #EA580C; }
+              .kpi-peak .kpi-label { color: #F97316; }
+              .kpi-count { background: #F5F3FF; border-color: #DDD6FE; }
+              .kpi-count .kpi-value { color: #6D28D9; }
+              .kpi-count .kpi-label { color: #8B5CF6; }
+
+              .section-title {
+                font-size: 15px;
+                font-weight: 800;
+                color: #1E293B;
+                margin-bottom: 10px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid #E2E8F0;
+              }
+
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 24px;
+                font-size: 12px;
+              }
+              thead th {
+                background: #1E293B;
+                color: #fff;
+                padding: 10px 12px;
+                text-align: left;
+                font-weight: 700;
+                text-transform: uppercase;
+                font-size: 10px;
+                letter-spacing: 0.5px;
+              }
+              thead th:not(:first-child) { text-align: right; }
+              thead th:first-child { border-radius: 6px 0 0 0; }
+              thead th:last-child { border-radius: 0 6px 0 0; }
+              tbody td {
+                padding: 8px 12px;
+                border-bottom: 1px solid #F1F5F9;
+                color: #334155;
+              }
+              tbody td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+              tbody tr:nth-child(even) { background: #F8FAFC; }
+              tbody tr:nth-child(odd) { background: #fff; }
+
+              .safe { color: #059669; font-weight: 700; }
+              .warning { color: #D97706; font-weight: 700; }
+              .critical { color: #DC2626; font-weight: 700; }
+
+              .footer {
+                margin-top: 8px;
+                padding-top: 16px;
+                border-top: 1px solid #E2E8F0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 10px;
+                color: #94A3B8;
+              }
+              .footer-left { font-weight: 600; color: #64748B; }
             </style>
           </head>
           <body>
-            <h1>SmartSaver - Reporte de Consumo Energético</h1>
-            <h3>Dispositivo: ${deviceName}</h3>
-            <h3>Generado el: ${now}</h3>
-            <p>Este documento contiene el registro detallado de consumo eléctrico del sistema.</p>
-
-            <div class="summary">
-              <div class="summary-box">
-                <h4>Energía Total</h4>
-                <p>${totalEnergyKwh.toFixed(2)} kWh</p>
-              </div>
-              <div class="summary-box">
-                <h4>Potencia Promedio</h4>
-                <p>${avgPower.toFixed(1)} W</p>
-              </div>
-              <div class="summary-box">
-                <h4>Pico de Potencia</h4>
-                <p>${peakPower.toFixed(1)} W</p>
-              </div>
+            <div class="header">
+              <h1>SmartSaver</h1>
+              <p>Reporte de Consumo Energ&eacute;tico</p>
             </div>
 
-            <table>
-              <thead>
-                <tr>
-                  <th>${aggregates.length > 0 ? 'Periodo' : 'Hora'}</th>
-                  <th>${aggregates.length > 0 ? 'Potencia Promedio' : 'Voltaje'}</th>
-                  <th>${aggregates.length > 0 ? 'Potencia Máxima' : 'Corriente'}</th>
-                  <th>${aggregates.length > 0 ? 'Energía (Wh)' : 'Potencia (W)'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRows}
-              </tbody>
-            </table>
+            <div class="content">
+              <div class="meta-grid">
+                <div class="meta-item">Dispositivo: <strong>${deviceName}</strong></div>
+                <div class="meta-separator"></div>
+                <div class="meta-item">Rango: <strong>${rangeLabel}</strong></div>
+                <div class="meta-separator"></div>
+                <div class="meta-item">Generado: <strong>${now}</strong></div>
+                ${userName ? `<div class="meta-separator"></div><div class="meta-item">Usuario: <strong>${userName}</strong></div>` : ''}
+              </div>
 
-            <div class="footer">
-              Generado automáticamente por SmartSaver Hub App
+              <div class="kpi-row">
+                <div class="kpi-card kpi-energy">
+                  <div class="kpi-dot"></div>
+                  <div class="kpi-value">${totalEnergyKwh.toFixed(2)}</div>
+                  <div class="kpi-label">kWh Total</div>
+                </div>
+                <div class="kpi-card kpi-avg">
+                  <div class="kpi-dot"></div>
+                  <div class="kpi-value">${avgPower.toFixed(1)}</div>
+                  <div class="kpi-label">Watts Promedio</div>
+                </div>
+                <div class="kpi-card kpi-peak">
+                  <div class="kpi-dot"></div>
+                  <div class="kpi-value">${peakPower.toFixed(1)}</div>
+                  <div class="kpi-label">Watts Pico</div>
+                </div>
+                <div class="kpi-card kpi-count">
+                  <div class="kpi-dot"></div>
+                  <div class="kpi-value">${datasetCount}</div>
+                  <div class="kpi-label">Registros</div>
+                </div>
+              </div>
+
+              <div class="section-title">Datos de Telemetr&iacute;a</div>
+              ${aggregates.length > 0 ? `
+              <table>
+                <thead>
+                  <tr>
+                    <th>Periodo</th>
+                    <th>Promedio (W)</th>
+                    <th>M&aacute;ximo (W)</th>
+                    <th>Energ&iacute;a (Wh)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${aggTableRows}
+                </tbody>
+              </table>
+              ` : rawHistory.length > 0 ? `
+              <table>
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Voltaje (V)</th>
+                    <th>Corriente (A)</th>
+                    <th>Potencia (W)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rawTableRows}
+                </tbody>
+              </table>
+              ` : ''}
+
+              <div class="footer">
+                <span class="footer-left">SmartSaver Hub</span>
+                <span>Reporte No. ${timestamp} &mdash; Generado autom&aacute;ticamente</span>
+              </div>
             </div>
           </body>
         </html>
@@ -546,6 +780,27 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Seleccionar Dispositivo</Text>
           <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
+            <TouchableOpacity
+              style={[styles.modalItem, selectedMac === '__system__' && styles.modalItemActive]}
+              onPress={() => handleDeviceSelect('__system__')}
+              activeOpacity={0.6}
+            >
+              <View style={styles.modalItemContent}>
+                <Feather
+                  name={selectedMac === '__system__' ? 'check-circle' : 'circle'}
+                  size={20}
+                  color={selectedMac === '__system__' ? '#3B82F6' : '#CBD5E1'}
+                />
+                <View style={styles.modalItemText}>
+                  <Text style={[styles.modalItemName, selectedMac === '__system__' && styles.modalItemNameActive]}>
+                    Sistema Completo
+                  </Text>
+                  <Text style={styles.modalItemMac}>{allDevices.length} dispositivos activos</Text>
+                </View>
+                <Feather name="grid" size={16} color={selectedMac === '__system__' ? '#3B82F6' : '#CBD5E1'} />
+              </View>
+            </TouchableOpacity>
+            <View style={{ height: 1, backgroundColor: colors.borderSoft, marginVertical: 8 }} />
             {allDevices.map((device) => {
               const isSelected = device.mac === selectedMac;
               return (
@@ -587,8 +842,8 @@ export const AnalyticsScreen = ({ mac }: { mac?: string }) => {
     </Modal>
   );
 
-  const showPickerCard = allDevices.length > 1;
-  const showSingleDeviceLabel = allDevices.length === 1;
+  const showPickerCard = allDevices.length >= 1;
+  const showSingleDeviceLabel = false;
 
   return (
     <SafeAreaView style={styles.container}>

@@ -7,13 +7,16 @@ interface TelemetryState {
   latestReadings: Record<string, TelemetryReading>;
   deviceOnlineStatus: Record<string, boolean>;
   relayStates: Record<string, boolean>;
+  relayStatesUpdatedAt: Record<string, number>;
   autoKillStates: Record<string, string | null>;
+  activeBmsAlerts: Record<string, { id: number; tipo_alerta: string; fecha: string } | null>;
   isConnected: boolean;
   isInitialized: boolean;
 
   startConnection: () => void;
   stopConnection: () => void;
   setAutoKillFromHTTP: (mac: string, value: string | null) => void;
+  forceReconnect: () => void;
 }
 
 
@@ -25,7 +28,9 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
   latestReadings: {},
   deviceOnlineStatus: {},
   relayStates: {},
+  relayStatesUpdatedAt: {},
   autoKillStates: {},
+  activeBmsAlerts: {},
   isConnected: false,
   isInitialized: false,
 
@@ -54,7 +59,10 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { useAuthStore } = require('./useAuthStore');
-        return useAuthStore.getState().getAccessToken();
+        return await Promise.race([
+          useAuthStore.getState().getAccessToken(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
       } catch {
         return null;
       }
@@ -86,17 +94,29 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
           }
           if (msg.data.estado_reportado !== undefined) {
             updates.relayStates = { ...state.relayStates, [msg.mac]: msg.data.estado_reportado };
+            updates.relayStatesUpdatedAt = { ...state.relayStatesUpdatedAt, [msg.mac]: Date.now() };
           }
           return updates;
         });
       } else if (msg.type === 'alerta') {
         set((state) => ({
           relayStates: { ...state.relayStates, [msg.mac]: msg.data.estado_reportado },
+          relayStatesUpdatedAt: { ...state.relayStatesUpdatedAt, [msg.mac]: Date.now() },
+          activeBmsAlerts: {
+            ...state.activeBmsAlerts,
+            [msg.mac]: msg.data.alerta === 'bms_critica'
+              ? { id: Date.now(), tipo_alerta: 'bms_critica', fecha: new Date().toISOString() }
+              : null,
+          },
         }));
       } else if (msg.type === 'auto_kill_warning') {
         set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: msg.data.auto_kill_at } }));
       } else if (msg.type === 'auto_kill_executed') {
-        set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: null } }));
+        set((state) => ({
+          autoKillStates: { ...state.autoKillStates, [msg.mac]: null },
+          relayStates: { ...state.relayStates, [msg.mac]: false },
+          relayStatesUpdatedAt: { ...state.relayStatesUpdatedAt, [msg.mac]: Date.now() },
+        }));
       } else if (msg.type === 'auto_kill_cancelled') {
         set((state) => ({ autoKillStates: { ...state.autoKillStates, [msg.mac]: null } }));
       } else if (msg.type === 'gateway_alerta') {
@@ -132,16 +152,27 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
       latestReadings: {},
       deviceOnlineStatus: {},
       relayStates: {},
+      relayStatesUpdatedAt: {},
       autoKillStates: {},
+      activeBmsAlerts: {},
     });
   },
 
   setAutoKillFromHTTP: (mac: string, value: string | null) => {
     set((state) => {
-      if (state.autoKillStates[mac] === undefined) {
-        return { autoKillStates: { ...state.autoKillStates, [mac]: value } };
+      const current = state.autoKillStates[mac];
+      if (current && value === null) {
+        return state;
       }
-      return state;
+      return { autoKillStates: { ...state.autoKillStates, [mac]: value } };
     });
+  },
+
+  forceReconnect: () => {
+    wsService.disconnect();
+    if (unsubscribeStatus) { unsubscribeStatus(); unsubscribeStatus = null; }
+    if (unsubscribeMessages) { unsubscribeMessages(); unsubscribeMessages = null; }
+    set({ isInitialized: false, isConnected: false });
+    get().startConnection();
   },
 }));

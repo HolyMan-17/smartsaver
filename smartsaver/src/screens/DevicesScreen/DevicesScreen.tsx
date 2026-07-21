@@ -1,13 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, Animated, Easing, KeyboardAvoidingView, ScrollView, TextInput, Alert, AppState, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Swipeable } from 'react-native-gesture-handler';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { getStyles } from './DevicesScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { apiClient } from '../../services/apiClient';
 import { TelemetriaResponse } from '../../types/api';
 import { useTelemetryStore } from '../../store/useTelemetryStore';
+import { useRefreshTickStore } from '../../store/useRefreshTickStore';
+import { isTelemetryFresh, STALE_TELEMETRY_MS } from '../../utils/freshness';
+import { useUpsStore } from '../../store/useUpsStore';
 
 interface DeviceNode {
   id: string;
@@ -51,146 +56,208 @@ export const DevicesScreen = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'P1' | 'P2' | 'P3'>('ALL');
   const [showFilter, setShowFilter] = useState(false);
+  const [deletingMacs, setDeletingMacs] = useState<Record<string, boolean>>({});
 
   // ponytail: YAGNI/performance optimization - store fetched initial telemetry history MACs in a ref to avoid duplicate API calls
   const fetchedMacsRef = useRef<Record<string, boolean>>({});
-  // ponytail: YAGNI/performance optimization - keep track of latest devices in a ref to avoid stale closures in setInterval callbacks
   const devicesRef = useRef<DeviceNode[]>([]);
   const optimisticNameRef = useRef<{ mac: string; name: string; expiresAt: number } | null>(null);
+  const fetchInFlightRef = useRef(false);
+  const attemptedFallbackRef = useRef(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const latestReadings = useTelemetryStore((s) => s.latestReadings);
-  const deviceOnlineStatus = useTelemetryStore((s) => s.deviceOnlineStatus);
+  useEffect(() => {
+    if (editingDevice !== null) {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      fadeAnim.setValue(0);
+    }
+  }, [editingDevice, fadeAnim]);
 
-  const fetchDevices = async (filter?: 'P1' | 'P2' | 'P3') => {
-    const results: DeviceNode[] = [];
+  const tickCount = useRefreshTickStore((s) => s.tickCount);
+  const [isAppActive, setIsAppActive] = useState(true);
+  const { upsData, systemPower } = useUpsStore();
+
+  const fetchDevices = async (filter?: 'P1' | 'P2' | 'P3', force = false) => {
+    if (!force && fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
+    let apiFailed = false;
 
     try {
-      const apiDevices = await apiClient.getDevices(filter);
+      const results: DeviceNode[] = [];
 
-      if (apiDevices !== null) {
-        // Fetch telemetry for all devices we have access to
-        for (const device of apiDevices) {
-          const existingDevice = devicesRef.current.find(d => d.mac === device.mac);
-          const hasStoreData = useTelemetryStore.getState().latestReadings[device.mac] !== undefined;
+      try {
+        const apiDevices = await apiClient.getDevices(filter);
 
-          let voltage = existingDevice?.voltage ?? 0;
-          let current = existingDevice?.current ?? 0;
-          let watts = existingDevice?.watts ?? 0;
-          let aiStatus = existingDevice?.aiStatus ?? 0;
-          let zone = existingDevice?.zone ?? 'Safe';
+        if (apiDevices !== null) {
+          for (const device of apiDevices) {
+            const existingDevice = devicesRef.current.find(d => d.mac === device.mac);
+            const hasStoreData = useTelemetryStore.getState().latestReadings[device.mac] !== undefined;
 
-          // ponytail: YAGNI/performance optimization - only fetch initial telemetry history once if not in store/already fetched
-          if (!hasStoreData && !existingDevice && !fetchedMacsRef.current[device.mac]) {
-            try {
-              const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(device.mac, 1);
-              const latest = history?.[0];
-              if (latest) {
-                voltage = latest.voltaje;
-                current = latest.corriente;
-                watts = latest.potencia;
-                aiStatus = latest.ai_status ?? 0;
-                zone = classifyZone(latest.potencia, latest.ai_status);
+            let voltage = existingDevice?.voltage ?? 0;
+            let current = existingDevice?.current ?? 0;
+            let watts = existingDevice?.watts ?? 0;
+            let aiStatus = existingDevice?.aiStatus ?? 0;
+            let zone = existingDevice?.zone ?? 'Safe';
+
+            if (!hasStoreData && !existingDevice && !fetchedMacsRef.current[device.mac]) {
+              try {
+                const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(device.mac, 1);
+                const latest = history?.[0];
+                if (latest) {
+                  voltage = latest.voltaje;
+                  current = latest.corriente;
+                  watts = latest.potencia;
+                  aiStatus = latest.ai_status ?? 0;
+                  zone = classifyZone(latest.potencia, latest.ai_status);
+                }
+              } catch {
               }
-            } catch {
-              // Ignore and keep 0s/defaults
+              fetchedMacsRef.current[device.mac] = true;
             }
-            fetchedMacsRef.current[device.mac] = true;
-          }
 
-          const opt = optimisticNameRef.current;
-          const name = (opt && opt.mac === device.mac && Date.now() < opt.expiresAt) 
-            ? opt.name 
-            : (device.nombre_personalizado || device.mac);
+            const opt = optimisticNameRef.current;
+            const name = (opt && opt.mac === device.mac && Date.now() < opt.expiresAt) 
+              ? opt.name 
+              : (device.nombre_personalizado || device.mac);
+            
+            if (opt && Date.now() >= opt.expiresAt) {
+              optimisticNameRef.current = null;
+            }
+
+            results.push({
+              id: String(device.id),
+              name: name,
+              mac: device.mac,
+              voltage,
+              current,
+              watts,
+              zone,
+              aiStatus,
+              isOnline: device.is_online,
+              isOn: device.estado_reportado,
+              isSyncing: device.estado_deseado !== device.estado_reportado,
+              automationLockActive: device.automation_lock_active,
+            });
+          }
           
-          if (opt && Date.now() >= opt.expiresAt) {
-            optimisticNameRef.current = null;
-          }
-
-          results.push({
-            id: String(device.id),
-            name: name,
-            mac: device.mac,
-            voltage,
-            current,
-            watts,
-            zone,
-            aiStatus,
-            isOnline: device.is_online,
-            isOn: device.estado_reportado,
-            isSyncing: device.estado_deseado !== device.estado_reportado,
-            automationLockActive: device.automation_lock_active,
-          });
+          setDevices(results);
+          devicesRef.current = results;
+          setIsLoading(false);
+          return;
         }
-        
-        setDevices(results);
-        devicesRef.current = results;
+      } catch {
+      }
+
+      apiFailed = true;
+
+      const current = devicesRef.current;
+      if (current.length === 0 && !attemptedFallbackRef.current) {
+        attemptedFallbackRef.current = true;
+      } else {
         setIsLoading(false);
         return;
       }
-    } catch {
-      // API unavailable — fall back to hardcoded registry
-    }
 
-    for (const reg of DEVICE_REGISTRY) {
-      const existingDevice = devicesRef.current.find(d => d.mac === reg.mac);
-      const hasStoreData = useTelemetryStore.getState().latestReadings[reg.mac] !== undefined;
+      for (const reg of DEVICE_REGISTRY) {
+        const existingDevice = devicesRef.current.find(d => d.mac === reg.mac);
+        const hasStoreData = useTelemetryStore.getState().latestReadings[reg.mac] !== undefined;
 
-      let voltage = existingDevice?.voltage ?? 0;
-      let current = existingDevice?.current ?? 0;
-      let watts = existingDevice?.watts ?? 0;
-      let aiStatus = existingDevice?.aiStatus ?? 0;
-      let zone = existingDevice?.zone ?? 'Safe';
-      let isOnline = existingDevice?.isOnline ?? false;
-      let isOn = existingDevice?.isOn ?? false;
+        let voltage = existingDevice?.voltage ?? 0;
+        let current = existingDevice?.current ?? 0;
+        let watts = existingDevice?.watts ?? 0;
+        let aiStatus = existingDevice?.aiStatus ?? 0;
+        let zone = existingDevice?.zone ?? 'Safe';
+        let isOnline = existingDevice?.isOnline ?? false;
+        let isOn = existingDevice?.isOn ?? false;
 
-      // ponytail: YAGNI/performance optimization - only fetch initial telemetry history once if not in store/already fetched
-      if (!hasStoreData && !existingDevice && !fetchedMacsRef.current[reg.mac]) {
-        try {
-          const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(reg.mac, 1);
-          if (history && history.length > 0) {
-            const latest = history[0];
-            voltage = latest.voltaje;
-            current = latest.corriente;
-            watts = latest.potencia;
-            aiStatus = latest.ai_status ?? 0;
-            zone = classifyZone(latest.potencia, latest.ai_status);
-            isOnline = true;
-            isOn = true;
+        if (!hasStoreData && !existingDevice && !fetchedMacsRef.current[reg.mac]) {
+          try {
+            const history: TelemetriaResponse[] = await apiClient.getTelemetryHistory(reg.mac, 1);
+            if (history && history.length > 0) {
+              const latest = history[0];
+              voltage = latest.voltaje;
+              current = latest.corriente;
+              watts = latest.potencia;
+              aiStatus = latest.ai_status ?? 0;
+              zone = classifyZone(latest.potencia, latest.ai_status);
+              isOnline = true;
+              isOn = true;
+            }
+          } catch {
           }
-        } catch {
-          // Keep defaults
+          fetchedMacsRef.current[reg.mac] = true;
         }
-        fetchedMacsRef.current[reg.mac] = true;
+
+        results.push({
+          id: reg.id,
+          name: reg.name,
+          mac: reg.mac,
+          voltage,
+          current,
+          watts,
+          zone,
+          aiStatus,
+          isOnline,
+          isOn,
+          isSyncing: false,
+        });
       }
 
-      results.push({
-        id: reg.id,
-        name: reg.name,
-        mac: reg.mac,
-        voltage,
-        current,
-        watts,
-        zone,
-        aiStatus,
-        isOnline,
-        isOn,
-        isSyncing: false,
-      });
+      setDevices(results);
+      devicesRef.current = results;
+      setIsLoading(false);
+    } finally {
+      if (!apiFailed) {
+        fetchInFlightRef.current = false;
+      } else {
+        fetchInFlightRef.current = false;
+      }
     }
-
-    setDevices(results);
-    devicesRef.current = results;
-    setIsLoading(false);
   };
 
   useEffect(() => {
+    fetchedMacsRef.current = {};
+  }, [selectedFilter]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setIsAppActive(s === 'active'));
+    return () => sub?.remove();
+  }, []);
+
+
+
+  useEffect(() => {
     const currentFilter = selectedFilter === 'ALL' ? undefined : selectedFilter;
+    if (!isAppActive) return;
     fetchDevices(currentFilter);
     const intervalId = setInterval(() => {
       fetchDevices(currentFilter);
     }, 5000);
     return () => clearInterval(intervalId);
-  }, [selectedFilter]);
+  }, [selectedFilter, isAppActive]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const currentFilter = selectedFilter === 'ALL' ? undefined : selectedFilter;
+      fetchDevices(currentFilter, true);
+      useUpsStore.getState().fetchUpsState();
+    }, [selectedFilter])
+
+  );
+
+  useEffect(() => {
+    if (tickCount === 0) return;
+    const currentFilter = selectedFilter === 'ALL' ? undefined : selectedFilter;
+    fetchDevices(currentFilter, true);
+    useUpsStore.getState().fetchUpsState();
+  }, [tickCount]);
+
 
   const handleSaveName = async () => {
     if (!editingDevice) return;
@@ -275,6 +342,42 @@ export const DevicesScreen = () => {
     setEditName(device.name === device.mac ? '' : device.name);
   };
 
+  const handleDeleteDevice = (mac: string) => {
+    const device = devicesRef.current.find(d => d.mac === mac);
+    const deviceName = device?.name ?? mac;
+    
+    Alert.alert(
+      'Eliminar dispositivo',
+      `¿Seguro que quieres eliminar "${deviceName}" de tu lista? Esta acción no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingMacs(prev => ({ ...prev, [mac]: true }));
+            const snapshot = devicesRef.current;
+            const filtered = snapshot.filter(d => d.mac !== mac);
+            setDevices(filtered);
+            devicesRef.current = filtered;
+            
+            try {
+              const result = await apiClient.deleteDevice(mac);
+              if (!result) throw new Error('API returned null');
+              setDeletingMacs(prev => { const n = { ...prev }; delete n[mac]; return n; });
+            } catch {
+              setDevices(snapshot);
+              devicesRef.current = snapshot;
+              setDeletingMacs(prev => { const n = { ...prev }; delete n[mac]; return n; });
+              Alert.alert('Error', 'No se pudo eliminar el dispositivo. Verifica tu conexión.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+
   const getAiStatusDetails = (item: DeviceNode) => {
     if (!item.isOnline) {
       return { label: 'IA: SIN SEÑAL', color: colors.textSecondary, bg: colors.borderSoft };
@@ -317,11 +420,78 @@ export const DevicesScreen = () => {
   };
 
   const renderItem = ({ item }: { item: DeviceNode }) => {
-    const iconStyle = getIconStyles(item);
-    const physicalStatus = getPhysicalStatus(item);
-    const aiDetails = getAiStatusDetails(item);
+    return <DeviceCardRow item={item} />;
+  };
+
+  const DeviceCardRow = ({ item }: { item: DeviceNode }) => {
+    const reading = useTelemetryStore((s) => s.latestReadings[item.mac]);
+    const onlineFromStore = useTelemetryStore((s) => s.deviceOnlineStatus[item.mac]);
+    const relayFromStore = useTelemetryStore((s) => s.relayStates[item.mac]);
+    const relayUpdatedAtFromStore = useTelemetryStore((s) => s.relayStatesUpdatedAt[item.mac]);
+    const autoKillAtFromStore = useTelemetryStore((s) => s.autoKillStates[item.mac]);
+
+    const isReadingFresh = isTelemetryFresh(reading?.receivedAt);
+    const effectiveReading = isReadingFresh ? reading : undefined;
+
+    const relayFresh = relayUpdatedAtFromStore && Date.now() - relayUpdatedAtFromStore < STALE_TELEMETRY_MS;
+    const effectiveRelay = relayFresh ? relayFromStore : undefined;
+
+    const displayOnline = onlineFromStore !== undefined ? onlineFromStore : item.isOnline;
+    const displayIsOn = effectiveRelay !== undefined ? effectiveRelay : item.isOn;
+    const displayVoltage = effectiveReading?.voltaje ?? item.voltage;
+    const displayCurrent = effectiveReading?.corriente ?? item.current;
+    const displayWatts = effectiveReading?.potencia ?? item.watts;
+    const displayAiStatus = effectiveReading?.ai_status ?? item.aiStatus;
+    const displayZone = effectiveReading ? classifyZone(effectiveReading.potencia, effectiveReading.ai_status) : item.zone;
+
+    const resolvedItem: DeviceNode = { ...item, voltage: displayVoltage, current: displayCurrent, watts: displayWatts, aiStatus: displayAiStatus, zone: displayZone, isOnline: displayOnline, isOn: displayIsOn };
+
+    const iconStyle = getIconStyles(resolvedItem);
+    const physicalStatus = getPhysicalStatus(resolvedItem);
+    const aiDetails = getAiStatusDetails(resolvedItem);
+
+    const [ct, setCt] = useState('');
+    useEffect(() => {
+      if (!autoKillAtFromStore) { setCt(''); return; }
+      const update = () => {
+        const msLeft = new Date(autoKillAtFromStore).getTime() - Date.now();
+        setCt(msLeft > 0 ? `${Math.ceil(msLeft / 1000)}s` : '');
+      };
+      update();
+      const id = setInterval(update, 1000);
+      return () => clearInterval(id);
+    }, [autoKillAtFromStore]);
+
+    const renderDeleteAction = (progress: any, dragX: any) => {
+      const opacity = dragX.interpolate({
+        inputRange: [-80, 0],
+        outputRange: [1, 0],
+        extrapolate: 'clamp',
+      });
+      const isDeleting = deletingMacs[item.mac];
+      return (
+        <TouchableOpacity
+          style={styles.swipeDeleteAction}
+          onPress={() => handleDeleteDevice(item.mac)}
+          disabled={isDeleting}
+        >
+          {isDeleting ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Animated.Text style={[styles.swipeDeleteText, { opacity }]}>
+              Eliminar
+            </Animated.Text>
+          )}
+        </TouchableOpacity>
+      );
+    };
 
     return (
+      <Swipeable
+        renderRightActions={renderDeleteAction}
+        overshootRight={false}
+        rightThreshold={40}
+      >
       <TouchableOpacity 
         style={styles.deviceCard} 
         onPress={() => handleDevicePress(item)}
@@ -349,13 +519,12 @@ export const DevicesScreen = () => {
               {physicalStatus.label}
             </Text>
             <Text style={styles.deviceMetaText}>
-              {item.isOnline && item.isOn 
-                ? `${item.voltage.toFixed(1)}V • ${item.watts.toFixed(1)}W`
+              {resolvedItem.isOnline && resolvedItem.isOn 
+                ? `${resolvedItem.voltage.toFixed(1)}V • ${resolvedItem.watts.toFixed(1)}W`
                 : '— V • — W'}
             </Text>
           </View>
           
-          {/* AI Status Badge */}
           <View style={{
             paddingHorizontal: 8,
             paddingVertical: 2,
@@ -368,26 +537,27 @@ export const DevicesScreen = () => {
               {aiDetails.label}
             </Text>
           </View>
+
+          {autoKillAtFromStore && (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: '#EF4444', borderRadius: 8,
+              paddingHorizontal: 8, paddingVertical: 4,
+              alignSelf: 'flex-start', marginTop: 4,
+            }}>
+              <Feather name="alert-triangle" size={12} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginLeft: 4 }}>
+                Auto-kill {ct}
+              </Text>
+            </View>
+          )}
         </View>
 
         <Feather name="chevron-right" size={24} color="#CBD5E1" style={styles.chevron} />
       </TouchableOpacity>
+      </Swipeable>
     );
   };
-
-  const resolvedDevices = devices.map(device => {
-    const reading = latestReadings[device.mac];
-    const onlineFromStore = deviceOnlineStatus[device.mac];
-    return {
-      ...device,
-      voltage: reading?.voltaje ?? device.voltage,
-      current: reading?.corriente ?? device.current,
-      watts: reading?.potencia ?? device.watts,
-      aiStatus: reading?.ai_status ?? device.aiStatus,
-      zone: reading ? classifyZone(reading.potencia, reading.ai_status) : device.zone,
-      isOnline: onlineFromStore !== undefined ? onlineFromStore : device.isOnline,
-    };
-  });
 
   return (
     <SafeAreaView style={styles.container}>
@@ -423,7 +593,6 @@ export const DevicesScreen = () => {
         </Text>
       </View>
 
-      {/* Segment Selector for Priority Filter */}
       {showFilter && (
         <View style={styles.filterWrapper}>
           <Text style={styles.filterLabel}>Filtrar por Prioridad</Text>
@@ -456,6 +625,52 @@ export const DevicesScreen = () => {
         </View>
       )}
 
+      {upsData && (
+        <TouchableOpacity
+          style={{
+            backgroundColor: colors.card,
+            borderRadius: 16,
+            padding: 16,
+            marginHorizontal: 20,
+            marginTop: 12,
+            marginBottom: 8,
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: colors.borderSoft,
+            shadowColor: '#64748B',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.05,
+            shadowRadius: 8,
+            elevation: 2,
+          }}
+          onPress={() => router.push('/ups')}
+          activeOpacity={0.7}
+        >
+          <View style={{
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: upsData.modo_actual === 1 ? colors.warningBg : colors.successBg,
+            justifyContent: 'center', alignItems: 'center', marginRight: 12,
+          }}>
+            <Feather
+              name={upsData.modo_actual === 1 ? 'battery' : 'zap'}
+              size={20}
+              color={upsData.modo_actual === 1 ? '#F59E0B' : '#10B981'}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
+              Sistema UPS
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+              {upsData.modo_actual === 1 ? 'Modo Batería' : 'Modo Red'} • {systemPower?.potencia_total_w ?? 0}W
+              {systemPower?.carga_bateria_porcentaje != null && ` • ${systemPower.carga_bateria_porcentaje}%`}
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={colors.textSecondary} style={{ marginLeft: 8 }} />
+        </TouchableOpacity>
+      )}
+
       {isLoading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <ActivityIndicator size="large" color="#3B82F6" />
@@ -463,74 +678,98 @@ export const DevicesScreen = () => {
         </View>
       ) : (
         <FlatList
-          data={resolvedDevices}
+          data={devices}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContainer}
         />
       )}
 
-      {/* Edit Name Modal */}
-      <Modal
-        visible={editingDevice !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setEditingDevice(null);
-          setEditName('');
-        }}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.content}>
-            <Text style={styles.title}>Editar Nombre</Text>
-            <Text style={styles.subtitle}>
-              {editingDevice?.mac}
-            </Text>
-            
-            <TextInput
-              style={styles.input}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Nombre personalizado"
-              placeholderTextColor="#94A3B8"
-              autoFocus
-              maxLength={50}
-            />
-            
-            <View style={styles.buttonRow}>
-              <TouchableOpacity 
-                style={[styles.button, styles.cancelButton]}
-                onPress={() => {
-                  setEditingDevice(null);
-                  setEditName('');
-                }}
-              >
-                <Text style={styles.cancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              
-              {editingDevice && editingDevice.name !== editingDevice.mac && (
-                <TouchableOpacity 
-                  style={[styles.button, styles.clearButton]}
-                  onPress={handleClearName}
-                  disabled={isSaving}
-                >
-                  <Text style={styles.clearText}>Eliminar</Text>
-                </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity 
-                style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
-                onPress={handleSaveName}
-                disabled={isSaving}
-              >
-                <Text style={styles.saveText}>
-                  {isSaving ? 'Guardando...' : 'Guardar'}
+      {/* Edit Name Overlay */}
+      {editingDevice !== null && (
+        <Animated.View style={[styles.absoluteOverlay, { opacity: fadeAnim }]}>
+          <KeyboardAvoidingView
+            style={styles.keyboardAvoidingView}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={60}
+          >
+            <ScrollView
+              contentContainerStyle={styles.overlay}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
+              <Animated.View style={[
+                styles.content,
+                {
+                  transform: [
+                    { scale: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+                    { translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
+                  ],
+                },
+              ]}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.title}>Editar Nombre</Text>
+                  <TouchableOpacity onPress={() => {
+                    setEditingDevice(null);
+                    setEditName('');
+                  }}>
+                    <Feather name="x" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.subtitle}>
+                  {editingDevice?.mac}
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={styles.input}
+                    value={editName}
+                    onChangeText={setEditName}
+                    placeholder="Nombre personalizado"
+                    placeholderTextColor="#94A3B8"
+                    autoFocus
+                    selectTextOnFocus
+                    maxLength={50}
+                  />
+                </View>
+
+                <View style={styles.buttonRow}>
+                  <TouchableOpacity 
+                    style={[styles.button, styles.cancelButton]}
+                    onPress={() => {
+                      setEditingDevice(null);
+                      setEditName('');
+                    }}
+                  >
+                    <Text style={styles.cancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  
+                  {editingDevice && editingDevice.name !== editingDevice.mac && (
+                    <TouchableOpacity 
+                      style={[styles.button, styles.clearButton]}
+                      onPress={handleClearName}
+                      disabled={isSaving}
+                    >
+                      <Text style={styles.clearText}>Eliminar</Text>
+                    </TouchableOpacity>
+                  )}
+                  
+                  <TouchableOpacity 
+                    style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
+                    onPress={handleSaveName}
+                    disabled={isSaving}
+                  >
+                    <Text style={styles.saveText}>
+                      {isSaving ? 'Guardando...' : 'Guardar'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </Animated.View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 };

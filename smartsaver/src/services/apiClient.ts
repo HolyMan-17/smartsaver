@@ -18,6 +18,9 @@ import {
   NotificacionUsuarioResponse,
   UpsSistema,
   SystemPower,
+  GatewayInfoResponse,
+  GatewayRecommendationResponse,
+  GatewayPredictionResponse,
 } from '../types/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.thesisbroker.com';
@@ -461,4 +464,40 @@ export const apiClient = {
       throw e;
     }
   },
+
+  // ─── Gateway ──────────────────────────────────────────
+
+  getGatewayInfo: async (): Promise<GatewayInfoResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/gateway/info`);
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  getGatewayRecommendations: async (gatewayMac: string): Promise<GatewayRecommendationResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/gateways/${gatewayMac}/recomendaciones`);
+      if (res.status === 204) return null;
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  getGatewayPrediction: async (gatewayMac: string): Promise<GatewayPredictionResponse | null> => {
+    try {
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/gateways/${gatewayMac}/prediccion`);
+      if (res.status === 204) return null;
+      if (!res.ok) return null;
+      return res.json();
+    } catch {
+      return null;
+    }
+  },
+
+
 };

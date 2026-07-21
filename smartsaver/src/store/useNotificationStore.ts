@@ -108,9 +108,17 @@ export const useNotificationStore = create<NotificationState>()(
         }
       },
 
-      clearAll: (localOnly = false) => {
+      clearAll: async (localOnly = false) => {
+        const prev = get().notifications;
         set({ notifications: [] });
-        if (!localOnly) apiClient.clearAllNotifications().catch(e => console.warn('[Notif]', e.message));
+        if (!localOnly) {
+          try {
+            await apiClient.clearAllNotifications();
+          } catch (e) {
+            set({ notifications: prev });
+            throw e;
+          }
+        }
       },
 
       syncBackendNotifications: async () => {

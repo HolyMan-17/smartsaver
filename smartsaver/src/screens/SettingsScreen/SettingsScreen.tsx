@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { getStyles } from './SettingsScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useEventLogStore } from '../../store/useEventLogStore';
@@ -27,28 +27,33 @@ export const SettingsScreen = () => {
 
   // State for Toggles
   const [enableAI, setEnableAI] = useState(false);
-  const [autoLoadShedding, setAutoLoadShedding] = useState(false);
   const [notifyCritical, setNotifyCritical] = useState(true);
   const [notifyWarnings, setNotifyWarnings] = useState(true);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
 
+  const fetchSettingsRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
+  fetchSettingsRef.current = async () => {
+    try {
+      const settings = await apiClient.getUserSettings();
+      setEnableAI(settings.ai_control_habilitado);
+      setNotifyCritical(settings.notificaciones_criticas ?? true);
+      setNotifyWarnings(settings.notificaciones_advertencias ?? true);
+    } catch {
+      console.error('Error fetching settings');
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchSettings = async () => {
-      try {
-        const settings = await apiClient.getUserSettings();
-        setEnableAI(settings.ai_control_habilitado);
-        setAutoLoadShedding(settings.auto_apagado_low_priority);
-        setNotifyCritical(settings.notificaciones_criticas ?? true);
-        setNotifyWarnings(settings.notificaciones_advertencias ?? true);
-      } catch {
-        console.error('Error fetching settings');
-      } finally {
-        setIsLoadingSettings(false);
-      }
-    };
-    fetchSettings();
+    fetchSettingsRef.current?.();
   }, []);
+
+  useFocusEffect(React.useCallback(() => {
+    fetchSettingsRef.current?.();
+  }, []));
 
   const handleToggleAI = async (newValue: boolean) => {
     if (isUpdatingSettings) return;
@@ -71,32 +76,6 @@ export const SettingsScreen = () => {
     } catch {
       setEnableAI(previousValue);
       Alert.alert('Error', 'No se pudieron guardar tus ajustes de IA. Comprueba tu conexión.');
-    } finally {
-      setIsUpdatingSettings(false);
-    }
-  };
-
-  const handleToggleLoadShedding = async (newValue: boolean) => {
-    if (isUpdatingSettings) return;
-    setIsUpdatingSettings(true);
-    // Optimistic update
-    const previousValue = autoLoadShedding;
-    setAutoLoadShedding(newValue);
-
-    try {
-      const updated = await apiClient.updateUserSettings({ auto_apagado_low_priority: newValue });
-      if (updated) {
-        addLog({
-          type: 'USER_ACTION',
-          title: newValue ? 'Corte P3 Habilitado' : 'Corte P3 Deshabilitado',
-          message: `${userName || 'El usuario'} ${newValue ? 'habilitó' : 'deshabilitó'} el auto-apagado de dispositivos de baja prioridad (P3).`,
-        });
-      } else {
-        throw new Error('Server returned failed status');
-      }
-    } catch {
-      setAutoLoadShedding(previousValue);
-      Alert.alert('Error', 'No se pudieron guardar tus ajustes de corte. Comprueba tu conexión.');
     } finally {
       setIsUpdatingSettings(false);
     }
@@ -260,7 +239,7 @@ export const SettingsScreen = () => {
         {/* 3. TINYML & AUTOMATION */}
         <Text style={styles.sectionTitle}>Opciones de automatizacion</Text>
         <View style={styles.card}>
-          <View style={styles.row}>
+          <View style={[styles.row, styles.rowNoBorder]}>
             <View style={styles.rowLeft}>
               <View style={[styles.iconContainer, { backgroundColor: colors.iconBg }]}>
                 <Feather name="cpu" size={18} color="#8B5CF6" />
@@ -273,29 +252,6 @@ export const SettingsScreen = () => {
             <CustomSwitch
               value={enableAI}
               onValueChange={handleToggleAI}
-              activeColor="#3B82F6"
-              inactiveColor={colors.border}
-              disabled={isUpdatingSettings}
-            />
-          </View>
-          
-          <View style={[styles.row, styles.rowNoBorder]}>
-            <View style={styles.rowLeft}>
-              <View style={[styles.iconContainer, { backgroundColor: colors.warningBg }]}>
-                <Feather name="zap-off" size={18} color="#F59E0B" />
-              </View>
-              <View style={styles.textWrapper}>
-                <Text style={styles.rowTitle}>
-                  Apagado de baja prioridad
-                </Text>
-                <Text style={styles.rowSubtitle}>
-                  Apagar inmediatamente dispositivos P3 si detecta consumo riesgoso
-                </Text>
-              </View>
-            </View>
-            <CustomSwitch
-              value={autoLoadShedding}
-              onValueChange={handleToggleLoadShedding}
               activeColor="#3B82F6"
               inactiveColor={colors.border}
               disabled={isUpdatingSettings}

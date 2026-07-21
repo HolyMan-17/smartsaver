@@ -292,6 +292,31 @@ export const getStyles = (colors: any, isDark: boolean = false) => StyleSheet.cr
     fontWeight: '600',
     color: colors.text,
   },
+  livePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  livePillOn: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
+  livePillOff: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  livePillText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
 
   // Modal Styles
   overlay: {
@@ -508,5 +533,72 @@ export const getStyles = (colors: any, isDark: boolean = false) => StyleSheet.cr
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+  
+  // Overlay Name Modal Styles (matching DevicesScreen)
+  absoluteOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    zIndex: 1000,
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  overlayNameContent: {
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 320,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  overlayButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: colors.borderSoft,
+  },
+  clearButton: {
+    backgroundColor: colors.dangerBg || '#FEE2E2', // fallback just in case
+  },
+  overlaySaveButton: {
+    backgroundColor: '#3B82F6',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  cancelText: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  clearText: {
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  overlaySaveText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  overlayTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
   },
 });

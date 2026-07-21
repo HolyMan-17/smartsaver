@@ -24,7 +24,17 @@ export const useUpsStore = create<UpsState>((set) => ({
         apiClient.getUpsState(),
         apiClient.getConsumoActual(),
       ]);
-      set({ upsData: ups, systemPower: power });
+      set((state) => {
+        if (!power) return { upsData: ups, systemPower: state.systemPower };
+        return {
+          upsData: ups,
+          systemPower: {
+            ...power,
+            autonomia_estimada_min: power.autonomia_estimada_min ?? state.systemPower?.autonomia_estimada_min,
+            carga_bateria_porcentaje: power.carga_bateria_porcentaje ?? state.systemPower?.carga_bateria_porcentaje,
+          },
+        };
+      });
     } catch (e) {
       console.warn('fetchUpsState failed:', e);
     } finally {

@@ -7,10 +7,11 @@ import {
   Alert,
   Modal,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { apiClient } from "../../services/apiClient";
 import { HorarioBase } from "../../types/api";
 import { getStyles } from "./ScheduleScreen.styles";
@@ -91,19 +92,26 @@ export const ScheduleScreen = () => {
   const [endPeriod, setEndPeriod] = useState("PM");
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isScheduleLoading, setIsScheduleLoading] = useState(true);
 
   const handleToggleAutomation = async (value: boolean) => {
+    setAutomationEnabled(value);
     try {
-      setAutomationEnabled(value);
-      
       if (mac) {
-        const payload = { ...currentScheduleRef.current, automatizacion_activa: value };
+        const backendDays = selectedDays.map(mapDayToBackend);
+        const hora_encendido = formatTimeForBackend(startHour, startMinute, startPeriod);
+        const hora_apagado = formatTimeForBackend(endHour, endMinute, endPeriod);
+        const payload = {
+          dias_operacion: backendDays,
+          hora_encendido,
+          hora_apagado,
+          automatizacion_activa: value,
+        };
         await apiClient.updateDeviceSchedule(mac, payload);
         currentScheduleRef.current = payload;
       }
 
       const deviceName = name || "Dispositivo";
-      // Log user action in event logs
       addLog({
         type: "USER_ACTION",
         title: value ? "Automatización Activada" : "Automatización Desactivada",
@@ -111,12 +119,12 @@ export const ScheduleScreen = () => {
         device_id: id || "",
         device_name: deviceName,
       });
-    } catch (e) {
+    } catch (e: any) {
       setAutomationEnabled(!value);
       console.error("Failed to save automation state", e);
       Alert.alert(
         "Error",
-        "No se pudo cambiar el estado de la automatización.",
+        e.message || "No se pudo cambiar el estado de la automatización.",
       );
     }
   };
@@ -200,11 +208,6 @@ export const ScheduleScreen = () => {
     }
   }, [showTimeModal]);
 
-  useEffect(() => {
-    loadSchedule();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
   const loadSchedule = async () => {
     try {
       if (!mac) return;
@@ -226,8 +229,12 @@ export const ScheduleScreen = () => {
       }
     } catch (e) {
       console.error("Failed to load schedule from API", e);
+    } finally {
+      setIsScheduleLoading(false);
     }
   };
+
+  useFocusEffect(React.useCallback(() => { loadSchedule(); }, [id]));
 
   const saveSchedule = async () => {
     if (selectedDays.length === 0) {
@@ -314,6 +321,11 @@ export const ScheduleScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {isScheduleLoading && (
+        <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+        </View>
+      )}
       {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -444,19 +456,19 @@ export const ScheduleScreen = () => {
 
       {/* FIXED BOTTOM SAVE FOOTER */}
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[
-            styles.bottomSaveButton,
-            isSaving && styles.bottomSaveButtonDisabled,
-          ]}
-          onPress={saveSchedule}
-          disabled={isSaving}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.bottomSaveButtonText}>
-            {isSaving ? "Guardando..." : "Guardar Horario"}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bottomSaveButton,
+              (isSaving || isScheduleLoading) && styles.bottomSaveButtonDisabled,
+            ]}
+            onPress={saveSchedule}
+            disabled={isSaving || isScheduleLoading}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.bottomSaveButtonText}>
+              {isSaving ? "Guardando..." : "Guardar Horario"}
+            </Text>
+          </TouchableOpacity>
       </View>
 
       {/* ── TIME PICKER MODAL (WHEEL ROLLING SELECTOR) ── */}

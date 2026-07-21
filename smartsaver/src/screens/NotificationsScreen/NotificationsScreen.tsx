@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { getStyles } from './NotificationsScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useNotificationStore, NotificationItem } from '../../store/useNotificationStore';
+import { useRefreshTickStore } from '../../store/useRefreshTickStore';
 
 export const NotificationsScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
@@ -20,12 +21,17 @@ export const NotificationsScreen = () => {
   const syncBackendNotifications = useNotificationStore((s) => s.syncBackendNotifications);
 
   const [refreshing, setRefreshing] = useState(false);
+  const tickCount = useRefreshTickStore((s) => s.tickCount);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     await syncBackendNotifications();
     setRefreshing(false);
   };
+
+  useFocusEffect(React.useCallback(() => { syncBackendNotifications(); }, [syncBackendNotifications]));
+
+  useEffect(() => { if (tickCount > 0) syncBackendNotifications(); }, [tickCount]);
 
   // Sync notifications on mount
   useEffect(() => {

@@ -6,7 +6,46 @@ import { router } from 'expo-router';
 import { getStyles } from './EventLogsScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
 import { useEventLogStore, EventLog, LogType } from '../../store/useEventLogStore';
+import { EventoResponse } from '../../types/api';
 import { apiClient } from '../../services/apiClient';
+
+const mapApiEvent = (e: EventoResponse): EventLog => {
+  let type: LogType;
+  let title: string;
+
+  switch (e.accion) {
+    case 'command_on':
+      type = 'USER_ACTION'; title = 'Dispositivo Encendido'; break;
+    case 'command_off':
+      type = 'USER_ACTION'; title = 'Dispositivo Apagado'; break;
+    case 'bms_shutdown':
+      type = 'CRITICAL'; title = 'Apagado de Emergencia (BMS)'; break;
+    case 'limit_exceeded':
+      type = 'WARNING'; title = 'Limite de Consumo Excedido'; break;
+    case 'schedule_trigger':
+      type = 'AI_ACTION'; title = 'Activacion por Horario'; break;
+    default:
+      if (e.razon_disparo?.toLowerCase().includes('ai') || e.razon_disparo?.toLowerCase().includes('auto')) {
+        type = 'AI_ACTION'; title = 'Accion de IA';
+      } else if (e.accion?.toLowerCase().includes('critical') || e.accion?.toLowerCase().includes('error')) {
+        type = 'CRITICAL'; title = 'Error del Sistema';
+      } else {
+        type = 'SYSTEM';
+        title = e.accion
+          ? e.accion.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+          : 'Evento del Sistema';
+      }
+  }
+
+  return {
+    id: `api_${e.id}`,
+    type,
+    title,
+    message: e.razon_disparo || 'Sin detalles adicionales',
+    timestamp: e.timestamp,
+    device_id: e.id_artefacto ? String(e.id_artefacto) : undefined,
+  };
+};
 
 export const EventLogsScreen = () => {
   const isDark = useThemeStore((state) => state.isDark);
@@ -32,14 +71,7 @@ export const EventLogsScreen = () => {
     setIsLoadingMore(true);
     try {
       const older = await apiClient.getEvents(undefined, 200, offset + 200);
-      const olderMapped: EventLog[] = older.map((e: any) => ({
-        id: `api_${e.id}`,
-        type: e.razon_disparo?.includes('AI') || e.razon_disparo?.includes('ai') ? 'AI_ACTION' : 'SYSTEM',
-        title: e.accion || 'Evento',
-        message: e.razon_disparo || 'Sin detalles',
-        timestamp: e.timestamp,
-        device_id: String(e.id_artefacto),
-      }));
+      const olderMapped: EventLog[] = older.map(mapApiEvent);
       setAllLogs([...allLogs, ...olderMapped]);
       setOffset(offset + 200);
       setHasMore(older.length === 200);

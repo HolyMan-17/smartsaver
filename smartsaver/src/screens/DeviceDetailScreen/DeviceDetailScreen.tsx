@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, AppState, Animated, Easing, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStyles } from './DeviceDetailScreen.styles';
 import { useThemeStore, getColors } from '../../store/useThemeStore';
@@ -11,6 +12,8 @@ import { DispositivoLimitesCommand, AlertaResponse } from '../../types/api';
 import { useEventLogStore } from '../../store/useEventLogStore';
 import { useUserStore } from '../../store/useUserStore';
 import { useTelemetryStore } from '../../store/useTelemetryStore';
+import { useRefreshTickStore } from '../../store/useRefreshTickStore';
+import { STALE_TELEMETRY_MS } from '../../utils/freshness';
 
 type Zone = 'Safe' | 'Warning' | 'Critical';
 
@@ -81,7 +84,15 @@ export const DeviceDetailScreen = () => {
   const prevOnline = useRef<boolean | null>(null);
   const prevZone = useRef<Zone | null>(null);
   const prevVoltageState = useRef<'normal' | 'sag' | 'spike'>('normal');
-  const prevAutoKillAt = useRef<string | null>(null);
+
+  const tickCount = useRefreshTickStore((s) => s.tickCount);
+  const fetchInFlightRef = useRef(false);
+  const [isAppActive, setIsAppActive] = useState(true);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setIsAppActive(s === 'active'));
+    return () => sub?.remove();
+  }, []);
 
   // Limits modal state
   const [showLimitsModal, setShowLimitsModal] = useState(false);
@@ -95,6 +106,21 @@ export const DeviceDetailScreen = () => {
   const [showNameModal, setShowNameModal] = useState(false);
   const [editName, setEditName] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (showNameModal) {
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    } else {
+      fadeAnim.setValue(0);
+    }
+  }, [showNameModal, fadeAnim]);
   const [priority, setPriority] = useState<'P1' | 'P2' | 'P3'>('P2');
   const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
 
@@ -155,6 +181,9 @@ export const DeviceDetailScreen = () => {
       if (diff <= 0) {
         setAutoKillCountdown('00:00');
         setAutoKillAt(null);
+        useTelemetryStore.setState((state) => ({
+          autoKillStates: { ...state.autoKillStates, [mac as string]: null },
+        }));
         fetchDeviceData(); // force-refresh state
       } else {
         const totalSecs = Math.floor(diff / 1000);
@@ -348,8 +377,18 @@ export const DeviceDetailScreen = () => {
     }
   }, [liveOnline, id, addLog]);
 
-  const fetchDeviceData = async () => {
+  useEffect(() => {
+    if (liveRelayState === undefined) return;
+    if (Date.now() - lastManualToggleRef.current < 5000) return;
+    setIsOn(liveRelayState);
+    isOnRef.current = liveRelayState;
+  }, [liveRelayState]);
+
+  const fetchDeviceData = async (force = false) => {
     if (!mac) return;
+    if (!force && fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
+    try {
 
     const currentLiveReading = useTelemetryStore.getState().latestReadings[mac];
     const shouldFetchHistory = isLoadingRef.current || !currentLiveReading;
@@ -391,14 +430,13 @@ export const DeviceDetailScreen = () => {
     }
 
     // Process connection state
-    const currentLiveOnline = useTelemetryStore.getState().deviceOnlineStatus[mac];
-    const newOnline = currentLiveOnline !== undefined ? currentLiveOnline : (connectionResult?.is_online ?? false);
-    
-    // Sync power state from backend
     if (connectionResult) {
       const withinManualWindow = Date.now() - lastManualToggleRef.current < 5000;
       if (!withinManualWindow) {
-        const resolvedIsOn = liveRelayState ?? connectionResult.estado_reportado;
+        const relayFreshAt = useTelemetryStore.getState().relayStatesUpdatedAt[mac];
+        const relayIsFresh = relayFreshAt && Date.now() - relayFreshAt < STALE_TELEMETRY_MS;
+        const liveRelayNow = relayIsFresh ? useTelemetryStore.getState().relayStates[mac] : undefined;
+        const resolvedIsOn = liveRelayNow ?? connectionResult.estado_reportado;
         setIsOn(resolvedIsOn);
         isOnRef.current = resolvedIsOn;
       }
@@ -409,26 +447,37 @@ export const DeviceDetailScreen = () => {
       useTelemetryStore.getState().setAutoKillFromHTTP(mac, serverAutoKillAt);
       
       setAutomationLockActive(connectionResult.automation_lock_active ?? false);
-
-      prevAutoKillAt.current = serverAutoKillAt;
     }
 
-    // ── Log connection state changes ──
-    prevOnline.current = newOnline;
-    setIsOnline(newOnline);
+    const wsOnline = useTelemetryStore.getState().deviceOnlineStatus[mac];
+    if (wsOnline === undefined) {
+      setIsOnline(connectionResult?.is_online ?? false);
+    }
 
     setIsLoading(false);
+    } finally {
+      fetchInFlightRef.current = false;
+    }
   };
 
   useEffect(() => {
-    if (mac) {
-      loadSavedLimits();
-    }
+    if (mac) loadSavedLimits();
+    if (!isAppActive) return;
     fetchDeviceData();
-    const intervalId = setInterval(fetchDeviceData, 5000);
-    return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mac, id]);
+    const id = setInterval(() => fetchDeviceData(), 5000);
+    return () => clearInterval(id);
+  }, [mac, id, isAppActive]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (mac) fetchDeviceData(true);
+    }, [mac])
+  );
+
+  useEffect(() => {
+    if (tickCount === 0 || !mac) return;
+    fetchDeviceData(true);
+  }, [tickCount]);
 
   // ── POST /api/comando/estado ──
   const handleTogglePower = async () => {
@@ -785,6 +834,12 @@ export const DeviceDetailScreen = () => {
             <Text style={styles.headerSubtitle} numberOfLines={1}>{deviceName}</Text>
             <Feather name="edit-2" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
           </TouchableOpacity>
+          <View style={[styles.livePill, isOnline ? styles.livePillOn : styles.livePillOff]}>
+            <View style={[styles.liveDot, { backgroundColor: isOnline ? '#10B981' : '#F59E0B' }]} />
+            <Text style={[styles.livePillText, { color: isOnline ? '#10B981' : '#F59E0B' }]}>
+              {isOnline ? 'En vivo' : 'Sin señal'}
+            </Text>
+          </View>
         </View>
         {/* ── NETWORK STATUS INDICATOR ── */}
         <View style={localStyles.statusPill}>
@@ -1096,6 +1151,50 @@ export const DeviceDetailScreen = () => {
 
         </View>
 
+          <View style={[localStyles.cardsContainer, { marginTop: 10, marginBottom: 30 }]}>
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.card,
+                borderRadius: 16,
+                padding: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(239,68,68,0.3)' : '#FECACA',
+                gap: 10,
+              }}
+              onPress={() => {
+                if (!mac) return;
+                Alert.alert(
+                  'Eliminar dispositivo',
+                  `¿Seguro que quieres eliminar "${deviceNameRef.current}" de tu lista? Esta acción no se puede deshacer.`,
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Eliminar',
+                      style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          const result = await apiClient.deleteDevice(mac);
+                          if (!result) throw new Error('API returned null');
+                          router.replace('/devices');
+                        } catch {
+                          Alert.alert('Error', 'No se pudo eliminar el dispositivo. Verifica tu conexión.');
+                        }
+                      },
+                    },
+                  ],
+                );
+              }}
+            >
+              <Feather name="trash-2" size={18} color="#EF4444" />
+              <Text style={{ color: '#EF4444', fontSize: 16, fontWeight: '700' }}>
+                Eliminar Dispositivo
+              </Text>
+            </TouchableOpacity>
+          </View>
+
       </ScrollView>
 
       {/* ═══════════════════════════════════════════ */}
@@ -1350,66 +1449,90 @@ export const DeviceDetailScreen = () => {
       {/* ═══════════════════════════════════════════ */}
       {/* ── NAME EDIT MODAL ─────────────────────── */}
       {/* ═══════════════════════════════════════════ */}
-      <Modal
-        visible={showNameModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => {
-          setShowNameModal(false);
-          setEditName('');
-        }}
-      >
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.container}>
-            <View style={modalStyles.header}>
-              <Text style={modalStyles.title}>Editar Nombre</Text>
-              <TouchableOpacity onPress={() => {
-                setShowNameModal(false);
-                setEditName('');
-              }}>
-                <Feather name="x" size={24} color="#64748B" />
-              </TouchableOpacity>
-            </View>
+      {showNameModal && (
+        <Animated.View style={[modalStyles.absoluteOverlay, { opacity: fadeAnim }]}>
+          <KeyboardAvoidingView
+            style={modalStyles.keyboardAvoidingView}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={60}
+          >
+            <ScrollView
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
+              <Animated.View style={[
+                modalStyles.overlayNameContent,
+                {
+                  transform: [
+                    { scale: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+                    { translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
+                  ],
+                },
+              ]}>
+                <View style={modalStyles.modalHeader}>
+                  <Text style={modalStyles.overlayTitle}>Editar Nombre</Text>
+                  <TouchableOpacity onPress={() => {
+                    setShowNameModal(false);
+                    setEditName('');
+                  }}>
+                    <Feather name="x" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={modalStyles.subtitle}>
-              {mac}
-            </Text>
-
-            <TextInput
-              style={modalStyles.input}
-              placeholder="Nombre personalizado"
-              placeholderTextColor="#94A3B8"
-              value={editName}
-              onChangeText={setEditName}
-              autoFocus
-              maxLength={50}
-            />
-
-            <View style={{ flexDirection: 'row', gap: 12 }}>
-              {deviceName !== mac && (
-                <TouchableOpacity 
-                  style={[modalStyles.saveButton, { backgroundColor: '#FEF2F2', flex: 1 }]}
-                  onPress={handleClearName}
-                  disabled={isSavingName}
-                >
-                  <Text style={{ color: '#EF4444', fontWeight: '600' }}>Eliminar</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity 
-                style={[modalStyles.saveButton, { flex: 2 }]}
-                onPress={handleSaveName}
-                disabled={isSavingName}
-              >
-                {isSavingName ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={modalStyles.saveButtonText}>Guardar</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+                <Text style={modalStyles.modalSubtitle}>
+                  {mac}
+                </Text>
+                
+                <TextInput
+                  style={[modalStyles.input, { marginTop: 0 }]}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="Nombre personalizado"
+                  placeholderTextColor="#94A3B8"
+                  autoFocus
+                  selectTextOnFocus
+                  maxLength={50}
+                />
+                
+                <View style={modalStyles.buttonRow}>
+                  <TouchableOpacity 
+                    style={[modalStyles.overlayButton, modalStyles.cancelButton]}
+                    onPress={() => {
+                      setShowNameModal(false);
+                      setEditName('');
+                    }}
+                  >
+                    <Text style={modalStyles.cancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  
+                  {deviceName !== mac && (
+                    <TouchableOpacity 
+                      style={[modalStyles.overlayButton, modalStyles.clearButton]}
+                      onPress={handleClearName}
+                      disabled={isSavingName}
+                    >
+                      <Text style={modalStyles.clearText}>Eliminar</Text>
+                    </TouchableOpacity>
+                  )}
+                  
+                  <TouchableOpacity 
+                    style={[modalStyles.overlayButton, modalStyles.overlaySaveButton, isSavingName && modalStyles.disabledButton]}
+                    onPress={handleSaveName}
+                    disabled={isSavingName}
+                  >
+                    {isSavingName ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={modalStyles.overlaySaveText}>Guardar</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </Animated.View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Animated.View>
+      )}
 
       {/* ═══════════════════════════════════════════ */}
       {/* ── KEYBOARD POPUP MODAL ────────────────── */}

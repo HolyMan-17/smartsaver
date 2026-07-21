@@ -69,7 +69,7 @@ export interface WSGatewayAlertaMessage {
 
 export interface WSGatewayTelemetriaMessage {
   type: "gateway_telemetria";
-  mac: string;
+  mac?: string;
   data: {
     potencia_total_w: number;
     cantidad_dispositivos_activos?: number;

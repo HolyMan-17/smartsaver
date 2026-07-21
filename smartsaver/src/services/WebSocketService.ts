@@ -13,6 +13,12 @@ class WebSocketService {
   private maxReconnectInterval: number = 30000;
   private shouldReconnect: boolean = true;
   private tokenGetter: TokenGetter | null = null;
+  private connectionGeneration: number = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatIntervalMs: number = 30000;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private lastMessageAt: number = 0;
+  private readonly maxSilenceMs: number = 60000;
 
   private messageListeners: Set<MessageCallback> = new Set();
   private statusListeners: Set<StatusCallback> = new Set();
@@ -26,6 +32,8 @@ class WebSocketService {
   }
 
   public async connect() {
+    const myGeneration: number = ++this.connectionGeneration;
+
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) {
       return;
     }
@@ -42,24 +50,33 @@ class WebSocketService {
     }
 
     if (!this.shouldReconnect) return;
+    if (myGeneration !== this.connectionGeneration) return;
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return;
 
     this.ws = new WebSocket(connectUrl);
 
     this.ws.onopen = () => {
       this.reconnectInterval = 2000;
+      this.lastMessageAt = Date.now();
+      this.heartbeatTimer = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMessageAt > this.maxSilenceMs) {
+          if (__DEV__) console.warn('[WS] heartbeat missed, forcing reconnect');
+          if (this.ws) this.ws.close();
+        }
+      }, this.heartbeatIntervalMs);
       this.notifyStatusListeners(true);
     };
 
     this.ws.onmessage = (event) => {
+      this.lastMessageAt = Date.now();
       try {
         const data: WSMessage = JSON.parse(event.data);
-        const KNOWN_TYPES = ['telemetria', 'conexion', 'alerta', 'auto_kill_warning', 'auto_kill_executed', 'auto_kill_cancelled'];
+        const KNOWN_TYPES = ['telemetria', 'conexion', 'alerta', 'auto_kill_warning', 'auto_kill_executed', 'auto_kill_cancelled', 'gateway_alerta', 'gateway_telemetria'];
         if (!data || typeof data.type !== 'string' || !KNOWN_TYPES.includes(data.type)) {
           if (__DEV__) console.warn('[WS] unknown message type:', data?.type);
           return;
         }
-        if (typeof data.mac !== 'string') {
+        if (typeof data.mac !== 'string' && data.type !== 'gateway_alerta' && data.type !== 'gateway_telemetria') {
           if (__DEV__) console.warn('[WS] missing mac:', data);
           return;
         }
@@ -77,11 +94,26 @@ class WebSocketService {
     this.ws.onclose = (event) => {
       this.notifyStatusListeners(false);
       this.ws = null;
+      if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
 
       if (event.code === 4001) {
         this.shouldReconnect = false;
-        const { useAuthStore } = require('../store/useAuthStore');
-        useAuthStore.getState().logout();
+        (async () => {
+          const { useAuthStore } = require('../store/useAuthStore');
+          try {
+            const { refreshAccessToken } = require('../services/authService');
+            const newTokens = await refreshAccessToken();
+            if (newTokens) {
+              if (__DEV__) console.info('[WS] 4001 → token refreshed, reconnecting');
+              this.shouldReconnect = true;
+              this.attemptReconnect();
+              return;
+            }
+          } catch (e) {
+            if (__DEV__) console.warn('[WS] 4001 → refresh failed, logging out', e);
+          }
+          useAuthStore.getState().logout();
+        })();
         return;
       }
 
@@ -95,13 +127,19 @@ class WebSocketService {
 
   public disconnect() {
     this.shouldReconnect = false;
+    this.connectionGeneration += 1;
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.ws) {
       this.ws.close();
     }
+    this.lastMessageAt = 0;
   }
 
   private attemptReconnect() {
-    setTimeout(() => {
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (this.shouldReconnect) {
         this.connect();
       }

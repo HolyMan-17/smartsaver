@@ -186,3 +186,83 @@ export interface NotificacionUsuarioResponse {
   timestamp: string;
 }
 
+// ─── Gateway Recommendations ───────────────────────────────
+
+export interface GatewayInfoResponse {
+  gateway_mac: string;
+  is_online: boolean;
+  last_seen_at: string | null;
+}
+
+export interface GatewayRecommendationDispositivo {
+  nodo_id: number;
+  mac: string;
+  prioridad: number;
+  potencia_w: number;
+}
+
+export interface GatewayRecommendacionItem {
+  nodo_id: number;
+  mac: string;
+  prioridad: number;
+  potencia_w: number;
+  autonomia_con_desconexion_min: number;
+  ganancia_min: number;
+}
+
+export interface GatewayAccionAutomatica {
+  nodo_id: number;
+  mac: string;
+  prioridad: number;
+  potencia_w: number;
+  motivo: string;
+}
+
+export interface GatewayRecommendationPayload {
+  ups_mode: number;
+  autonomia_actual_min: number;
+  potencia_total_w: number;
+  dispositivo_mas_consumidor: GatewayRecommendationDispositivo | null;
+  recomendaciones: GatewayRecommendacionItem[];
+  acciones_automaticas: GatewayAccionAutomatica[];
+}
+
+export interface GatewayRecommendationResponse {
+  gateway_mac: string;
+  payload: GatewayRecommendationPayload;
+  updated_at: string;
+}
+
+// ─── Gateway Prediction ──────────────────────────────────
+
+export interface GatewayPredictionHabit {
+  habit_load_w: number;
+  aprendiendo: boolean;
+}
+
+export interface GatewayPredictionDevice {
+  mac: string;
+  alias: string;
+  p_on: number;
+  expected_load_w: number;
+}
+
+export interface GatewayPredictionSugerencia {
+  mac: string;
+  alias: string;
+  ganancia_estimada_w: number;
+  motivo: string;
+}
+
+export interface GatewayPredictionPayload {
+  habitos: GatewayPredictionHabit;
+  dispositivos: GatewayPredictionDevice[];
+  sugerencia: GatewayPredictionSugerencia | null;
+}
+
+export interface GatewayPredictionResponse {
+  gateway_mac: string;
+  payload: GatewayPredictionPayload;
+  updated_at: string;
+}
+

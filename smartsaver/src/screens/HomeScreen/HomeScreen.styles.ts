@@ -103,29 +103,6 @@ export const getStyles = (colors: any) => StyleSheet.create({
     fontWeight: '500',
   },
 
-  // UPS Status Card
-  upsCard: {
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 25,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  upsSubLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  upsSubValue: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    fontWeight: '700',
-    marginTop: 2,
-  },
-
   // Section Headers
   sectionHeader: {
     fontSize: 18,
